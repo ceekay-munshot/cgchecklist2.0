@@ -96,6 +96,7 @@ lib/
   db.ts                  # Prisma client singleton
   health.ts              # aggregates provider + DB health
   health-types.ts        # ProviderStatus + interpretHttpPing (shared)
+  checklist.ts           # checklist loaders + itemKind (NUMERIC|QUALITATIVE)
   llm/                   # LLM provider clients — ONE LlmClient interface
     types.ts             # CompleteOpts, LlmClient, ProviderModule, errors
     json.ts              # JSON extraction + ajv validation + retry driver
@@ -108,8 +109,8 @@ lib/
   engine/                # checklist evaluation engine (STUB)
   orchestrate/           # end-to-end pipeline (STUB)
   export/                # Excel / PDF / PPTX writers (STUB)
-data/                    # reference data: checklist seed (~106 items)
-prisma/                  # schema.prisma + migrations/
+data/                    # checklist.json (16 sections / 106 items)
+prisma/                  # schema.prisma + migrations/ + seed.mts
 ```
 
 ---
@@ -213,6 +214,8 @@ npm run typecheck    # tsc --noEmit
 npm run db:migrate   # prisma migrate dev
 npm run db:generate  # prisma generate
 npm run db:studio    # prisma studio
+npm run db:seed      # prisma db seed (loads data/checklist.json)
+npm test             # vitest run
 ```
 
 Pages: `/` (dashboard), `/health` (provider statuses), `/api/health` (JSON).
@@ -231,10 +234,16 @@ resumable, quota-aware design (ChecklistSection/ChecklistItem mirroring
 new status enum + counters + summaryJson; SourceDoc; resumable ItemResult;
 ProviderUsage) + fresh `init` migration; `SCREENER_*` env added.
 
-**Pending (needs `data/checklist.json` — the full 106-item file):**
-- Idempotent seed (`prisma/seed.ts`) upserting 16 sections + 106 items by id.
-- `lib/checklist.ts`: `getSections()`, `getItems()`, `getItem(id)`,
-  `itemKind(item): 'NUMERIC' | 'QUALITATIVE'` + unit tests.
+**Done (Phase 2b — checklist plumbing):** `lib/checklist.ts`
+(`getSections`/`getItems`/`getItem`/`itemKind`), idempotent `prisma/seed.mts`
+(upsert by id), and vitest tests. `itemKind` is verified on the five sample
+formats; the seed + loaders were verified end-to-end against a throwaway fixture.
+
+**Pending — drop in `data/checklist.json` (the real 106-item file):** then
+`npm run db:seed` loads 16 sections / 106 items, and the data-backed tests
+(`getItems().length === 106`, the five sample ids) activate automatically.
+Reconcile the five sample ids in `lib/checklist.test.ts` with the real file if
+they differ from `A1-01 / A3 / A13 / A2 / A8`.
 
 **Later phases:** `lib/ingest` (extract PDFs/filings), `lib/engine`
 (`evaluateItem`), `lib/orchestrate` (resumable `runAnalysis` + persistence +
