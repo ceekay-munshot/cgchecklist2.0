@@ -1,0 +1,125 @@
+// Prisma schema for the CG Checklist analysis dashboard.
+// Flag-based model — there is intentionally NO numeric scoring anywhere.
+// See PROJECT_BRIEF.md for the product/domain context.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// The four flags every checklist item can resolve to.
+enum Flag {
+  GREEN
+  RED
+  NEUTRAL
+  NOT_AVAILABLE
+}
+
+enum DocumentType {
+  ANNUAL_REPORT
+  FILING
+  PRESS_RELEASE
+  WEBPAGE
+  OTHER
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// An Indian listed company under analysis.
+model Company {
+  id           String        @id @default(cuid())
+  name         String
+  cin          String?       @unique // Corporate Identification Number
+  nseSymbol    String?
+  bseCode      String?
+  sector       String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  documents    Document[]
+  analysisRuns AnalysisRun[]
+
+  @@index([name])
+}
+
+/// A source document/filing ingested for a company (annual report, etc.).
+model Document {
+  id          String       @id @default(cuid())
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId   String
+  type        DocumentType @default(OTHER)
+  title       String?
+  url         String?
+  fiscalYear  String? // e.g. "FY2024"
+  sourcePath  String? // local / object-storage path to the raw file
+  contentText String?      @db.Text // extracted text, if ingested
+  createdAt   DateTime     @default(now())
+
+  itemResults ItemResult[]
+
+  @@index([companyId])
+  @@index([companyId, fiscalYear])
+}
+
+/// One of the ~106 governance checklist items (reference data).
+model ChecklistItem {
+  id           String  @id @default(cuid())
+  code         String  @unique // stable item code, e.g. "BOARD-01"
+  category     String // grouping, e.g. "Board Composition"
+  title        String
+  description  String? @db.Text // what the item checks
+  regReference String? // SEBI LODR clause / Ind AS reference
+  guidance     String? @db.Text // how to evaluate (what is green vs red)
+  orderIndex   Int     @default(0)
+  active       Boolean @default(true)
+
+  itemResults ItemResult[]
+
+  @@index([category])
+}
+
+/// A single analysis pass over a company's documents.
+model AnalysisRun {
+  id         String    @id @default(cuid())
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId  String
+  status     RunStatus @default(PENDING)
+  fiscalYear String?
+  notes      String?   @db.Text
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  itemResults ItemResult[]
+
+  @@index([companyId])
+  @@index([status])
+}
+
+/// The flag-based result for one checklist item within one run.
+model ItemResult {
+  id              String        @id @default(cuid())
+  run             AnalysisRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId           String
+  checklistItem   ChecklistItem @relation(fields: [checklistItemId], references: [id])
+  checklistItemId String
+  flag            Flag          @default(NOT_AVAILABLE)
+  verdict         String? // one-liner verdict
+  evidence        String?       @db.Text // supporting evidence / quotes
+  source          String?       @db.Text // citation: document + page / url
+  document        Document?     @relation(fields: [documentId], references: [id])
+  documentId      String?
+  llmProvider     String? // which provider produced this result
+  createdAt       DateTime      @default(now())
+
+  @@unique([runId, checklistItemId])
+  @@index([runId])
+  @@index([flag])
+}
