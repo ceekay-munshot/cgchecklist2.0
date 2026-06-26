@@ -1,6 +1,13 @@
 // Prisma schema for the CG Checklist analysis dashboard.
 // Flag-based model — there is intentionally NO numeric scoring anywhere.
-// See PROJECT_BRIEF.md for the product/domain context.
+//
+// North stars (see PROJECT_BRIEF.md):
+//  1. Acquisition is FULLY AUTOMATED — the analyst supplies only a company;
+//     documents are harvested (Screener.in + web research). Manual upload is a
+//     DEFERRED fallback (MANUAL_UPLOAD / MANUAL exist but are unused now).
+//  2. A run is a LONG-LIVED, RESUMABLE, QUOTA-AWARE batch (free-tier LLMs,
+//     daily limits, may span ~5–6 days): hence per-item processing state
+//     (ItemResult.status) and per-provider daily usage (ProviderUsage).
 
 generator client {
   provider = "prisma-client-js"
@@ -11,7 +18,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// The four flags every checklist item can resolve to.
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// The four flags an evaluated item can resolve to. NEVER a numeric score.
 enum Flag {
   GREEN
   RED
@@ -19,107 +30,191 @@ enum Flag {
   NOT_AVAILABLE
 }
 
-enum DocumentType {
-  ANNUAL_REPORT
-  FILING
-  PRESS_RELEASE
-  WEBPAGE
-  OTHER
+enum Exchange {
+  NSE
+  BSE
 }
 
+/// Lifecycle of a (long-lived, resumable) analysis run.
+/// PARTIAL = paused, waiting for the next day's free-tier quota.
 enum RunStatus {
-  PENDING
-  RUNNING
-  COMPLETED
+  QUEUED
+  HARVESTING
+  PROCESSING
+  PARTIAL
+  DONE
+  ERROR
+}
+
+enum SourceDocType {
+  ANNUAL_REPORT
+  EARNINGS_PDF
+  ANNOUNCEMENT
+  WEB
+  MANUAL_UPLOAD // deferred manual-upload fallback; unused in the primary flow
+}
+
+enum FetchedVia {
+  SCREENER
+  FIRECRAWL
+  SCRAPEDO
+  DIRECT
+  MANUAL // deferred manual-upload fallback; unused in the primary flow
+}
+
+enum FetchStatus {
+  OK
+  EMPTY
   FAILED
 }
 
-/// An Indian listed company under analysis.
+/// Per-item resumable processing state within a run.
+enum ItemStatus {
+  PENDING
+  PROCESSING
+  DONE
+  ERROR
+  DEFERRED // skipped this pass (e.g. quota exhausted); retried next day
+  NEEDS_REVIEW
+}
+
+// ---------------------------------------------------------------------------
+// Checklist reference data (seeded idempotently from data/checklist.json)
+// ---------------------------------------------------------------------------
+
+/// One of the 16 checklist section-blocks.
+model ChecklistSection {
+  code       String          @id // e.g. "A1"
+  name       String
+  orderIndex Int             @default(0)
+  items      ChecklistItem[]
+}
+
+/// One of the 106 governance checklist items. Mirrors data/checklist.json.
+model ChecklistItem {
+  id              String           @id // JSON item id, e.g. "A1-01"
+  section         ChecklistSection @relation(fields: [sectionCode], references: [code], onDelete: Cascade)
+  sectionCode     String
+  item            String           @db.Text // the question / item text
+  description     String?          @db.Text
+  outputFormat    String? // output_format (e.g. "Percentage (%)", "Yes/No", "Ratio")
+  greenFlag       String?          @db.Text // green_flag
+  redFlag         String?          @db.Text // red_flag
+  sourceHint      String?          @db.Text // source_hint
+  isNonNegotiable Boolean          @default(false) // is_non_negotiable
+  thresholdLogic  String?          @db.Text // threshold_logic
+  orderIndex      Int              @default(0)
+
+  itemResults ItemResult[]
+
+  @@index([sectionCode])
+}
+
+// ---------------------------------------------------------------------------
+// Companies & runs
+// ---------------------------------------------------------------------------
+
+/// An Indian listed company under analysis. The analyst supplies only this;
+/// source documents are harvested automatically (Screener.in + web research).
 model Company {
   id           String        @id @default(cuid())
   name         String
-  cin          String?       @unique // Corporate Identification Number
-  nseSymbol    String?
-  bseCode      String?
+  ticker       String?
+  exchange     Exchange?
   sector       String?
+  cin          String?       @unique // Corporate Identification Number
+  screenerUrl  String? // resolved Screener.in company URL
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  documents    Document[]
   analysisRuns AnalysisRun[]
 
   @@index([name])
+  @@index([ticker])
 }
 
-/// A source document/filing ingested for a company (annual report, etc.).
-model Document {
-  id          String       @id @default(cuid())
-  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  companyId   String
-  type        DocumentType @default(OTHER)
-  title       String?
-  url         String?
-  fiscalYear  String? // e.g. "FY2024"
-  sourcePath  String? // local / object-storage path to the raw file
-  contentText String?      @db.Text // extracted text, if ingested
-  createdAt   DateTime     @default(now())
-
-  itemResults ItemResult[]
-
-  @@index([companyId])
-  @@index([companyId, fiscalYear])
-}
-
-/// One of the ~106 governance checklist items (reference data).
-model ChecklistItem {
-  id           String  @id @default(cuid())
-  code         String  @unique // stable item code, e.g. "BOARD-01"
-  category     String // grouping, e.g. "Board Composition"
-  title        String
-  description  String? @db.Text // what the item checks
-  regReference String? // SEBI LODR clause / Ind AS reference
-  guidance     String? @db.Text // how to evaluate (what is green vs red)
-  orderIndex   Int     @default(0)
-  active       Boolean @default(true)
-
-  itemResults ItemResult[]
-
-  @@index([category])
-}
-
-/// A single analysis pass over a company's documents.
+/// A long-lived, resumable, quota-aware analysis batch over a company.
 model AnalysisRun {
-  id         String    @id @default(cuid())
-  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  companyId  String
-  status     RunStatus @default(PENDING)
-  fiscalYear String?
-  notes      String?   @db.Text
-  startedAt  DateTime  @default(now())
-  finishedAt DateTime?
-
-  itemResults ItemResult[]
+  id              String       @id @default(cuid())
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId       String
+  status          RunStatus    @default(QUEUED)
+  createdBy       String?
+  createdAt       DateTime     @default(now())
+  lastProcessedAt DateTime?
+  itemsTotal      Int          @default(0)
+  itemsDone       Int          @default(0)
+  itemsError      Int          @default(0)
+  summaryJson     Json?
+  sourceDocs      SourceDoc[]
+  itemResults     ItemResult[]
 
   @@index([companyId])
   @@index([status])
 }
 
-/// The flag-based result for one checklist item within one run.
+/// A document harvested for a run (Screener.in / web research / — deferred —
+/// a manual upload).
+model SourceDoc {
+  id          String        @id @default(cuid())
+  run         AnalysisRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId       String
+  type        SourceDocType
+  name        String
+  sourceUrl   String
+  fetchedVia  FetchedVia
+  fetchStatus FetchStatus   @default(OK)
+  storageRef  String? // path / object key to the stored raw file
+  pages       Int?
+  createdAt   DateTime      @default(now())
+
+  itemResults ItemResult[]
+
+  @@index([runId])
+}
+
+/// The resumable per-item result for one checklist item within one run.
+/// There is NO score field — flags only.
 model ItemResult {
   id              String        @id @default(cuid())
   run             AnalysisRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId           String
-  checklistItem   ChecklistItem @relation(fields: [checklistItemId], references: [id])
-  checklistItemId String
-  flag            Flag          @default(NOT_AVAILABLE)
+  item            ChecklistItem @relation(fields: [itemId], references: [id])
+  itemId          String
+  status          ItemStatus    @default(PENDING)
+  flag            Flag? // null until evaluated
   verdict         String? // one-liner verdict
-  evidence        String?       @db.Text // supporting evidence / quotes
-  source          String?       @db.Text // citation: document + page / url
-  document        Document?     @relation(fields: [documentId], references: [id])
-  documentId      String?
-  llmProvider     String? // which provider produced this result
+  value           String? // extracted value (e.g. "33%", "1.2x")
+  evidenceQuote   String?       @db.Text
+  sourceDoc       SourceDoc?    @relation(fields: [sourceDocId], references: [id])
+  sourceDocId     String?
+  confidence      Float? // model confidence (NOT a governance score)
+  isNonNegotiable Boolean       @default(false)
+  gatePass        Boolean? // non-negotiable gate outcome (null until evaluated)
+  providerUsed    String? // which LLM provider produced this result
+  attempts        Int           @default(0)
+  lastError       String?       @db.Text
+  processedAt     DateTime?
+  analystOverride Boolean       @default(false)
+  overrideNote    String?       @db.Text
   createdAt       DateTime      @default(now())
 
-  @@unique([runId, checklistItemId])
+  @@unique([runId, itemId])
   @@index([runId])
+  @@index([status])
   @@index([flag])
+}
+
+// ---------------------------------------------------------------------------
+// Free-tier quota tracking
+// ---------------------------------------------------------------------------
+
+/// Per-provider, per-day usage so the batch can stay under free-tier limits.
+model ProviderUsage {
+  id       String   @id @default(cuid())
+  provider String
+  date     DateTime @db.Date
+  requests Int      @default(0)
+  tokens   Int      @default(0)
+
+  @@unique([provider, date])
 }

@@ -10,6 +10,30 @@
 
 ---
 
+## 0. North stars (read first — these shape every design choice)
+
+**1. Acquisition is FULLY AUTOMATED — no manual upload in the primary flow.**
+The analyst supplies only a company (name / ticker / exchange). The system
+harvests documents itself:
+- **Screener.in via Playwright**, using credentials from env
+  (`SCREENER_EMAIL`, `SCREENER_PASSWORD`, sourced from GitHub secrets).
+- **Web research (Firecrawl → Scrape.do)** covers subsidiaries / private cos.
+- **NO manual upload in the primary flow.** Manual upload is a **DEFERRED
+  fallback only** — keep a clean interface seam (`SourceDocType.MANUAL_UPLOAD`,
+  `FetchedVia.MANUAL`) but build **no upload UI now**.
+
+**2. A run is a LONG-LIVED, RESUMABLE, QUOTA-AWARE BATCH (may span ~5–6 days).**
+Processing runs on **free-tier LLMs under daily rate limits**, so a run is never
+"all at once":
+- Per-item processing state: `ItemResult.status`
+  (`PENDING | PROCESSING | DONE | ERROR | DEFERRED | NEEDS_REVIEW`), `attempts`,
+  `lastError`, `processedAt` — so a run resumes exactly where it paused.
+- Per-provider daily usage: `ProviderUsage(provider, date)` → `requests`,
+  `tokens` — so the batch stays under free-tier quotas.
+- `RunStatus.PARTIAL` = paused, waiting for the next day's quota.
+
+---
+
 ## 1. What we are building
 
 An internal **Corporate Governance (CG) Checklist** analysis dashboard for
@@ -137,12 +161,32 @@ search API, so its `search()` is always `not_available`.)
 
 ---
 
-## 6. Data model (Prisma — flag-based, no scores)
+## 6. Data model (Prisma — flag-based, NO score field anywhere)
 
-Models: `Company`, `Document`, `ChecklistItem`, `AnalysisRun`, `ItemResult`
-(`flag`, `verdict`, `evidence`, `source`, `llmProvider`).
-Enums: `Flag { GREEN, RED, NEUTRAL, NOT_AVAILABLE }`, `DocumentType`,
-`RunStatus`. See `prisma/schema.prisma`. Initial migration lives in
+**Reference data** (seeded idempotently from `data/checklist.json`):
+- **`ChecklistSection`** (16) — `code`, `name`.
+- **`ChecklistItem`** (106) — mirrors the JSON: `item`, `description`,
+  `outputFormat`, `greenFlag`, `redFlag`, `sourceHint`, `isNonNegotiable`,
+  `thresholdLogic`. PK = the JSON item id (e.g. `A1-01`).
+
+**Run data:**
+- **`Company`** — `name`, `ticker`, `exchange` (NSE|BSE), `sector`, `cin?`,
+  `screenerUrl?`. (Analyst supplies only this; docs are harvested.)
+- **`AnalysisRun`** — `status` (QUEUED|HARVESTING|PROCESSING|PARTIAL|DONE|ERROR),
+  `createdBy?`, `createdAt`, `lastProcessedAt?`,
+  `itemsTotal`/`itemsDone`/`itemsError`, `summaryJson?`.
+- **`SourceDoc`** — harvested doc: `type`, `name`, `sourceUrl`, `fetchedVia`,
+  `fetchStatus`, `storageRef?`, `pages?`.
+- **`ItemResult`** — resumable per-item state, unique `(runId, itemId)`:
+  `status`, `flag?`, `verdict?`, `value?`, `evidenceQuote?`, `sourceDocId?`,
+  `confidence?`, `isNonNegotiable`, `gatePass?`, `providerUsed?`, `attempts`,
+  `lastError?`, `processedAt?`, `analystOverride`, `overrideNote?`.
+  **No score field.**
+- **`ProviderUsage`** — free-tier quota, unique `(provider, date)`: `requests`,
+  `tokens`.
+
+Enums: `Flag`, `Exchange`, `RunStatus`, `SourceDocType`, `FetchedVia`,
+`FetchStatus`, `ItemStatus`. See `prisma/schema.prisma`; migrations in
 `prisma/migrations/`.
 
 ---
@@ -150,10 +194,12 @@ Enums: `Flag { GREEN, RED, NEUTRAL, NOT_AVAILABLE }`, `DocumentType`,
 ## 7. Environment variables (`.env.example`)
 
 `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `NVIDIA_API_KEY`,
-`FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`, `DATABASE_URL`.
+`FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`, `SCREENER_EMAIL`, `SCREENER_PASSWORD`,
+`DATABASE_URL`.
 Optional model overrides: `GEMINI_MODEL`, `GROQ_MODEL`, `MISTRAL_MODEL`,
 `NVIDIA_MODEL`. Copy `.env.example` → `.env` and fill in. `/health` shows any
-blank provider as **not configured**.
+blank provider as **not configured**. `SCREENER_*` feed the Phase-3 Playwright
+harvester (sourced from GitHub secrets in CI).
 
 ---
 
@@ -175,16 +221,25 @@ Pages: `/` (dashboard), `/health` (provider statuses), `/api/health` (JSON).
 
 ## 9. Status & next steps
 
-**Done:** project scaffold; Prisma schema + initial migration; `lib/llm`
-(4 providers behind one interface + JSON-schema validation + role router);
-`lib/scrape` (Firecrawl → Scrape.do fallback); `/health` page + `/api/health`;
-`.env.example`; this brief.
+**Done (Phase 1):** project scaffold; `lib/llm` (4 providers behind one
+interface + JSON-schema validation + role router); `lib/scrape` (Firecrawl →
+Scrape.do fallback); `/health` page + `/api/health`; `.env.example`; this brief.
 
-**Stubs to implement next** (throw "not implemented" today):
-`lib/ingest` (extract PDFs/filings), `lib/engine` (`evaluateItem`),
-`lib/orchestrate` (`runAnalysis` end-to-end + persistence),
-`lib/export` (xlsx/pdf/pptx). Seed the full **~106-item** checklist into
-`data/` + the `ChecklistItem` table (starter sample in `data/checklist.ts`).
+**Done (Phase 2 — data model):** reconciled Prisma schema for the automated,
+resumable, quota-aware design (ChecklistSection/ChecklistItem mirroring
+`data/checklist.json`; Company w/ ticker+exchange+screenerUrl; AnalysisRun w/
+new status enum + counters + summaryJson; SourceDoc; resumable ItemResult;
+ProviderUsage) + fresh `init` migration; `SCREENER_*` env added.
+
+**Pending (needs `data/checklist.json` — the full 106-item file):**
+- Idempotent seed (`prisma/seed.ts`) upserting 16 sections + 106 items by id.
+- `lib/checklist.ts`: `getSections()`, `getItems()`, `getItem(id)`,
+  `itemKind(item): 'NUMERIC' | 'QUALITATIVE'` + unit tests.
+
+**Later phases:** `lib/ingest` (extract PDFs/filings), `lib/engine`
+(`evaluateItem`), `lib/orchestrate` (resumable `runAnalysis` + persistence +
+quota gating), `lib/export` (xlsx/pdf/pptx); **Phase 3** Playwright Screener
+harvester.
 
 ---
 
