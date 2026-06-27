@@ -1,14 +1,17 @@
 import { llm, type LlmRole } from "@/lib/llm";
 import { recordProviderUsage } from "@/lib/usage";
 import type { CompleteOpts } from "@/lib/llm";
-import { QuotaExhaustedError, ROLE_CHAINS, hasQuota, markExhausted } from "./quota";
-
-// 429 backoff schedule. At the default base (5s) this rides out free-tier
-// per-minute windows as 5s -> 15s -> 30s before giving up and falling back to
-// the next provider. The base is read at call time so tests can shrink it
-// (LLM_BACKOFF_MS); the cumulative ~50s wait lets most transient rate limits
-// clear so the call SUCCEEDS within the run instead of being deferred.
-const BACKOFF_MULTIPLIERS = [1, 3, 6];
+import {
+  QuotaExhaustedError,
+  ROLE_CHAINS,
+  cooldownMs,
+  cooldownRemaining,
+  hasDailyQuota,
+  inCooldown,
+  maxWaitMs,
+  recordRateLimit,
+  recordSuccess,
+} from "./quota";
 
 function isRateLimit(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
@@ -19,28 +22,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
-  const base = Number(process.env.LLM_BACKOFF_MS) || 5000;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      if (!isRateLimit(e) || attempt >= BACKOFF_MULTIPLIERS.length) throw e;
-      await sleep(base * BACKOFF_MULTIPLIERS[attempt]);
-    }
-  }
-}
-
 /**
  * Quota-aware, role-routed, schema-validated LLM call.
  *
  * Tries the role's preferred provider, falling back through the chain to any
- * provider that is configured AND under its daily free-tier cap. Records one
- * unit of ProviderUsage per successful call; retries 429s with exponential
- * backoff, then marks the provider exhausted and falls back.
+ * provider that is configured AND under its daily cap AND not in a rate-limit
+ * cooldown. A 429 puts that provider in a short cooldown (NOT a permanent retire)
+ * so it returns to rotation once its per-minute window resets; when every
+ * eligible provider is cooling down, the call WAITS out the soonest cooldown
+ * (bounded by maxWaitMs) so the request succeeds within the run instead of
+ * deferring. Records one unit of ProviderUsage per success.
  *
- * Throws QuotaExhaustedError when NO provider can serve the call (all exhausted
- * / rate-limited / unconfigured) so the orchestrator can DEFER. A genuine
+ * Throws QuotaExhaustedError when no provider can serve the call within the wait
+ * budget (all over their daily cap, retired after repeated strikes, or
+ * persistently rate-limited) — so the orchestrator DEFERS the item. A genuine
  * provider error (bad JSON, 5xx) is thrown as-is so the item is recorded ERROR.
  */
 export async function callJSON<T>(
@@ -49,42 +44,59 @@ export async function callJSON<T>(
   schema: object,
 ): Promise<{ data: T; provider: string }> {
   const seen = new Set<string>();
-  const candidates = ROLE_CHAINS[role]
+  const chain = ROLE_CHAINS[role]
     .map((r) => llm[r])
     .filter((c) => {
       if (seen.has(c.id)) return false;
       seen.add(c.id);
       return c.isConfigured();
     });
-
-  const usable: typeof candidates = [];
-  for (const c of candidates) {
-    if (await hasQuota(c.id)) usable.push(c);
-  }
-  if (usable.length === 0) {
-    throw new QuotaExhaustedError(
-      `no LLM provider available for role "${role}" (all exhausted or unconfigured)`,
-    );
+  if (chain.length === 0) {
+    throw new QuotaExhaustedError(`no LLM provider configured for role "${role}"`);
   }
 
-  let lastError: unknown;
-  let allRateLimited = true;
-  for (const client of usable) {
-    try {
-      const data = await withBackoff(() => client.completeJSON<T>(opts, schema));
-      await recordProviderUsage(client.id);
-      return { data, provider: client.id };
-    } catch (e) {
-      lastError = e;
-      if (isRateLimit(e)) markExhausted(client.id);
-      else allRateLimited = false;
+  let waited = 0;
+  for (;;) {
+    const eligible = [];
+    for (const c of chain) if (await hasDailyQuota(c.id)) eligible.push(c);
+    if (eligible.length === 0) {
+      throw new QuotaExhaustedError(`all LLM providers exhausted for role "${role}"`);
     }
-  }
 
-  if (allRateLimited) {
-    throw new QuotaExhaustedError(
-      `all available providers rate-limited for role "${role}": ${(lastError as Error)?.message ?? "unknown"}`,
-    );
+    const now = Date.now();
+    const ready = eligible.filter((c) => !inCooldown(c.id, now));
+
+    if (ready.length === 0) {
+      // Everything is cooling down — wait out the soonest, within the budget.
+      const soonest = Math.min(...eligible.map((c) => cooldownRemaining(c.id, now)));
+      const wait = Math.max(1, Math.min(soonest, cooldownMs()));
+      if (waited + wait > maxWaitMs()) {
+        throw new QuotaExhaustedError(`all providers rate-limited for role "${role}"; deferring`);
+      }
+      await sleep(wait);
+      waited += wait;
+      continue;
+    }
+
+    let lastError: unknown;
+    let sawNonRateLimit = false;
+    for (const client of ready) {
+      try {
+        const data = await client.completeJSON<T>(opts, schema);
+        recordSuccess(client.id);
+        await recordProviderUsage(client.id);
+        return { data, provider: client.id };
+      } catch (e) {
+        lastError = e;
+        if (isRateLimit(e)) recordRateLimit(client.id, Date.now());
+        else sawNonRateLimit = true;
+      }
+    }
+
+    // A genuine (non-rate-limit) error is an item error, not a quota defer.
+    if (sawNonRateLimit) {
+      throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    }
+    // Otherwise every ready provider just rate-limited → loop; they're cooling now.
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }

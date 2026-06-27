@@ -20,7 +20,7 @@ on:
 jobs:
   analyze-run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

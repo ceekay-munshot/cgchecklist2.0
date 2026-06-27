@@ -366,16 +366,19 @@ batch for a run — `runAnalysis(runId)` evaluates every item via
 - **Resumable.** Processes only non-terminal items (PENDING / ERROR / DEFERRED);
   skips DONE / NEEDS_REVIEW — a re-run continues where it stopped.
   Concurrency-limited (`p-limit`, `ANALYZE_CONCURRENCY` default **2** — low
-  enough to stay under free-tier per-minute limits) with a long 429 backoff
-  (**5s → 15s → 30s**, base `LLM_BACKOFF_MS`) that rides out transient rate
-  limits within the run so the call succeeds instead of deferring.
-- **Quota-aware (the free-tier engine).** `lib/engine/quota.ts` holds per-provider
-  daily caps (defaults; override via `LLM_DAILY_CAP` / `<PROVIDER>_DAILY_CAP`).
-  Before each LLM call `callJSON` picks the role's provider, **falling back**
-  through the chain to any provider under its cap; a persistent 429 marks a
-  provider exhausted. If NO provider can serve it → `QuotaExhaustedError` → the
-  item is **DEFERRED**, the run goes **PARTIAL**, and the next run resumes.
-  **Tier-1 zero-LLM numeric items always complete** regardless of quota.
+  enough to stay under free-tier per-minute limits).
+- **Quota-aware (the free-tier engine).** `lib/engine/quota.ts` models two limits:
+  a **daily cap** per provider (from `ProviderUsage`; override via `LLM_DAILY_CAP`
+  / `<PROVIDER>_DAILY_CAP`) and transient **per-minute rate limits**. `callJSON`
+  picks the role's provider, **falling back** through the chain to any provider
+  under its daily cap and not in cooldown. A 429 puts a provider in a short
+  **cooldown** (`LLM_COOLDOWN_MS`, default 60s) — NOT a permanent retire — so it
+  returns to rotation once its window resets; when every eligible provider is
+  cooling, the call **waits out** the soonest (bounded by `LLM_MAX_WAIT_MS`) so it
+  succeeds within the run. A provider is retired only after repeated strikes
+  (`LLM_MAX_STRIKES`, a real cap). When no provider can serve a call →
+  `QuotaExhaustedError` → the item is **DEFERRED**, the run goes **PARTIAL**, the
+  next run resumes. **Tier-1 zero-LLM numeric items always complete** regardless.
 - **Completion + storage thrift.** When no items remain pending/error/deferred:
   compute `summaryJson` (section rollups + totalReds + non-negotiable gate), set
   `status=DONE`, update counters, then **prune** the heavy `SourceDoc.extractedText`

@@ -30,16 +30,18 @@ function usage(map: Record<string, number>) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetQuotaState();
-  process.env.LLM_DAILY_CAP = "5"; // low cap → deterministic exhaustion
-  process.env.LLM_BACKOFF_MS = "1"; // keep 429 backoff fast
+  process.env.LLM_DAILY_CAP = "5";
+  process.env.LLM_COOLDOWN_MS = "1"; // tiny cooldown so waits are instant
+  process.env.LLM_MAX_WAIT_MS = "1000";
+  process.env.LLM_MAX_STRIKES = "3";
 });
 afterEach(() => {
-  delete process.env.LLM_DAILY_CAP;
-  delete process.env.LLM_BACKOFF_MS;
-  delete process.env.GROQ_DAILY_CAP;
+  for (const k of ["LLM_DAILY_CAP", "LLM_COOLDOWN_MS", "LLM_MAX_WAIT_MS", "LLM_MAX_STRIKES", "GROQ_DAILY_CAP"]) {
+    delete process.env[k];
+  }
 });
 
-describe("callJSON — quota gating + fallback", () => {
+describe("callJSON — quota gating", () => {
   it("uses the role's preferred provider when it has quota", async () => {
     usage({});
     asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({ ok: true });
@@ -48,21 +50,21 @@ describe("callJSON — quota gating + fallback", () => {
     expect(asMock(recordProviderUsage)).toHaveBeenCalledWith("groq");
   });
 
-  it("falls back to the next provider when the preferred is exhausted", async () => {
-    usage({ groq: 5 }); // groq at cap, mistral has room
+  it("falls back to the next provider when the preferred is over its daily cap", async () => {
+    usage({ groq: 5 });
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ ok: true });
     const r = await callJSON("bulkClassify", { prompt: "x" }, {});
     expect(r.provider).toBe("mistral");
     expect(asMock(llm.bulkClassify.completeJSON)).not.toHaveBeenCalled();
   });
 
-  it("throws QuotaExhaustedError when ALL providers are exhausted", async () => {
+  it("throws QuotaExhaustedError when ALL providers are over their daily cap", async () => {
     usage({ groq: 5, mistral: 5, gemini: 5, nvidia: 5 });
     await expect(callJSON("bulkClassify", { prompt: "x" }, {})).rejects.toBeInstanceOf(QuotaExhaustedError);
     expect(asMock(llm.bulkClassify.completeJSON)).not.toHaveBeenCalled();
   });
 
-  it("treats a persistent 429 as exhaustion and falls back to the next provider", async () => {
+  it("a 429 cools the provider down and falls back to another in the same pass", async () => {
     usage({});
     asMock(llm.bulkClassify.completeJSON).mockRejectedValue(new Error("HTTP 429 Too Many Requests"));
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ ok: true });
@@ -70,16 +72,33 @@ describe("callJSON — quota gating + fallback", () => {
     expect(r.provider).toBe("mistral");
   });
 
+  it("WAITS out a cooldown and recovers (does not permanently retire on a transient 429)", async () => {
+    usage({ mistral: 5, gemini: 5, nvidia: 5 }); // only groq eligible
+    asMock(llm.bulkClassify.completeJSON)
+      .mockRejectedValueOnce(new Error("429 rate limit"))
+      .mockResolvedValue({ ok: true });
+    const r = await callJSON("bulkClassify", { prompt: "x" }, {});
+    expect(r.provider).toBe("groq");
+    expect(asMock(llm.bulkClassify.completeJSON).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("retires a provider after repeated strikes and then defers (QuotaExhaustedError)", async () => {
+    usage({ mistral: 5, gemini: 5, nvidia: 5 }); // only groq eligible
+    asMock(llm.bulkClassify.completeJSON).mockRejectedValue(new Error("429 rate limit"));
+    await expect(callJSON("bulkClassify", { prompt: "x" }, {})).rejects.toBeInstanceOf(QuotaExhaustedError);
+    expect(asMock(llm.bulkClassify.completeJSON).mock.calls.length).toBe(3); // MAX_STRIKES
+  });
+
   it("re-throws a genuine (non-rate-limit) provider error as an item error", async () => {
-    usage({ groq: 5, gemini: 5, nvidia: 5 }); // only mistral usable
-    asMock(llm.reasoning.completeJSON).mockRejectedValue(new Error("invalid JSON after retries"));
-    await expect(callJSON("reasoning", { prompt: "x" }, {})).rejects.toThrow(/invalid JSON/);
+    usage({ mistral: 5, gemini: 5, nvidia: 5 }); // only groq eligible
+    asMock(llm.bulkClassify.completeJSON).mockRejectedValue(new Error("invalid JSON after retries"));
+    await expect(callJSON("bulkClassify", { prompt: "x" }, {})).rejects.toThrow(/invalid JSON/);
   });
 
   it("capFor honors per-provider and global env overrides", () => {
     process.env.GROQ_DAILY_CAP = "3";
-    expect(capFor("groq")).toBe(3); // per-provider wins
+    expect(capFor("groq")).toBe(3);
     delete process.env.GROQ_DAILY_CAP;
-    expect(capFor("groq")).toBe(5); // falls back to LLM_DAILY_CAP
+    expect(capFor("groq")).toBe(5);
   });
 });
