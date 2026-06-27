@@ -1,0 +1,75 @@
+name: analyze-validate
+
+# Manual-only: validates the ANALYSIS CORE on REAL harvested data. It connects to
+# the persistent database (the DATABASE_URL secret — hosted Neon), finds the
+# company's latest run, and evaluates a focused set of checklist items spanning
+# every evidence path (Tier-1 numeric, numeric-from-document, qualitative, web
+# fallback / not-available). Run a harvest first (harvest-validate) so the run
+# has SourceDocs to read. No schedule yet.
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Company ticker to analyze (must already be harvested)"
+        required: true
+        default: TCS
+        type: string
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Persistent DB with the harvested SourceDocs (required).
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # LLM providers (engine routing): Groq=extract, Mistral=judge, Gemini=long,
+      # Nvidia=fallback. Firecrawl/Scrape.do = web fallback for sparse items.
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      SCRAPEDO_API_KEY: ${{ secrets.SCRAPEDO_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Guard — DATABASE_URL must be set
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::DATABASE_URL secret is not set. Analysis needs the persistent Neon DB that holds the harvested SourceDocs."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      # migrate deploy (never reset) + idempotent seed: ensures the schema
+      # (ItemResult) and the 106 ChecklistItems exist before evaluating.
+      - name: Prisma generate, migrate & seed
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run db:seed
+
+      # Inputs are passed via env (not interpolated) to avoid shell injection.
+      - name: Analyze ${{ inputs.ticker }}
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: npm run analyze -- "$TICKER"
+
+      - name: Upload analyze artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-${{ inputs.ticker }}
+          path: analyze-report/
+          if-no-files-found: warn

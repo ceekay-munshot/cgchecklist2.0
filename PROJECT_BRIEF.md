@@ -122,12 +122,19 @@ lib/
   scrape/                # web researchers — ONE WebResearcher interface
     types.ts firecrawl.ts scrapedo.ts index.ts
   ingest/                # document ingestion (STUB)
-  engine/                # checklist evaluation engine (STUB)
+  engine/                # analysis CORE: evidence → analyze → flag (tested)
+    thresholds.ts        # deterministic numeric band parser (pure)
+    types.ts             # EngineItem, Evidence, Analysis, FlagResult, ItemEvaluation
+    evidence.ts          # getEvidence — route to Screener structuredData / docs / web
+    analyzeItem.ts       # extract a concise fact (direct-map / Groq / Mistral / Gemini)
+    flag.ts              # assignFlag — numeric bands (deterministic) + qualitative judge + NN gate
+    evaluateItem.ts      # getEvidence → analyzeItem → assignFlag → upsert ItemResult
+    llm.ts               # role-routed completeJSON + ProviderUsage tracking
   orchestrate/           # end-to-end pipeline (STUB)
   export/                # Excel / PDF / PPTX writers (STUB)
 data/                    # checklist.json (16 sections / 106 items)
 prisma/                  # schema.prisma + migrations/ + seed.mts
-scripts/                 # harvest.ts (CLI: npm run harvest -- <TICKER>)
+scripts/                 # harvest.ts (npm run harvest), analyze-validate.ts (npm run analyze)
 ```
 
 ---
@@ -244,6 +251,7 @@ npm run db:studio    # prisma studio
 npm run db:seed      # prisma db seed (loads data/checklist.json)
 npm test             # vitest run
 npm run harvest -- <TICKER> [NSE|BSE]   # Phase-3 Screener harvest of one company
+npm run analyze -- <TICKER>             # Phase-4 analysis core on a company's latest run
 ```
 
 Pages: `/` (dashboard), `/health` (provider statuses), `/api/health` (JSON).
@@ -305,9 +313,45 @@ build analysis on top of.
   docs; Tier 2 de-duplicates identical documents by `contentHash` (sha256) so
   duplicate concall "REC" landing pages don't persist (or re-download) twice.
 
-**Later phases:** `lib/engine` (`evaluateItem`), `lib/orchestrate` (resumable
-`runAnalysis` over harvested SourceDocs + quota gating), `lib/export`
-(xlsx/pdf/pptx). (`lib/ingest` is now largely covered by `lib/harvest`.)
+**Done (Phase 4 — analysis core):** `lib/engine` turns harvested SourceDocs into
+flag-based ItemResults — `evaluateItem(item, runId)` = `getEvidence` →
+`analyzeItem` → `assignFlag`. Validated on ~6 TCS items via
+`analyze-validate.yml` (NOT the full 106, NOT the daily orchestration yet).
+
+Key design choices (record + obey):
+- **Token-thrift / retrieve-then-judge.** NEVER feed a whole 300-page report to
+  an LLM. `getEvidence` routes by item: **NUMERIC** → read the Tier-1
+  `SCREENER_PAGE` `structuredData` (ratios / shareholding / P&L / BS / CF; D/E
+  falls back to *computing* Borrowings ÷ (Equity + Reserves) from the balance
+  sheet); **document items** (incl. numeric-from-document like board
+  independence) → keyword-score the stored `extractedText` per page and return
+  only the top passages (capped ~6k chars) with `(sourceDocId + page)`
+  citations; **fallback** → WebResearcher (Firecrawl → Scrape.do), else
+  "not available".
+- **Provider routing (analysis):** Groq = cheap structured extraction (e.g.
+  board counts); Mistral = qualitative judgment; Gemini = long passage sets
+  (>12k chars); Nvidia = fallback. Tier-1 numerics are **direct-mapped — zero
+  LLM**. Every structured call is schema-validated (`completeJSON`, 2 retries)
+  and tracked in `ProviderUsage`.
+- **Flags, never scores.** NUMERIC flags are **deterministic**: `thresholds.ts`
+  parses the `green_flag`/`red_flag` bands (`<0.5–1.0`, `>25%`, `≥50%`, ranges)
+  into comparable thresholds — green if it meets the green band, red if the red
+  band, else neutral (unit-tested on the real seeded bands). QUALITATIVE flags
+  are LLM-judged against the green/red descriptions → flag + one-sentence reason.
+  "not available" → `NOT_AVAILABLE`. `confidence` is a model confidence
+  (mapped to a Float on persist), **not** a governance score.
+- **Non-negotiable gate.** `gatePass` = green→true / red→false / else null. A RED
+  on a non-negotiable qualitative item is cross-checked by a second, cheaper
+  model; RED is confirmed only if both agree, else it becomes NEUTRAL + "needs
+  review". (The seeded checklist currently has 0 non-negotiable items, so this is
+  unit-tested with a synthetic item.)
+- **Resumable.** `evaluateItem` upserts the `ItemResult` by `(runId, itemId)`
+  (status DONE / NEEDS_REVIEW / ERROR, `attempts++`), so the later orchestrator
+  resumes per-item.
+
+**Later phases:** `lib/orchestrate` (resumable `runAnalysis` over ALL 106 items
++ daily free-tier quota gating), `lib/export` (xlsx/pdf/pptx). (`lib/ingest` is
+now largely covered by `lib/harvest`.)
 
 ---
 
@@ -347,6 +391,24 @@ uploads an artifact **`harvest-<ticker>`** containing `structuredData.json` (the
 `SCREENER_PAGE` structured JSON), `documents.json` (each document SourceDoc:
 type, pages, fetchStatus, fetchedVia) and `summary.txt`. A graceful harvest
 degradation does **not** fail the job — `fetchStatus` is surfaced in the report.
+
+### `analyze-validate.yml` — analysis core on real data (manual only)
+
+`/.github/workflows/analyze-validate.yml` validates the **analysis core** on a
+company that has **already been harvested**. Actions → **analyze-validate** → Run
+workflow → **ticker** (default `TCS`). It connects to the persistent Neon DB
+(`DATABASE_URL` secret), runs `prisma migrate deploy` + idempotent `db:seed`,
+finds the ticker's latest run, and evaluates **6 items** spanning every evidence
+path: `A14-01` (leverage D/E, Tier-1), `A3-02` (pledging, Tier-1), `A3-01`
+(promoter-holding trend, Tier-1 series), `A1-01` (board independence — numeric
+from the annual report), `A4-01` (auditor identity — qualitative from the AR),
+`A13-02` (view on the CEO — qualitative; web fallback / "not available").
+**Required secrets:** `DATABASE_URL`, plus the LLM keys `GROQ_API_KEY`,
+`MISTRAL_API_KEY`, `GEMINI_API_KEY` (and optionally `NVIDIA_API_KEY`,
+`FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`). It uploads **`analyze-<ticker>`**
+(`results.json` + `summary.md`): per item → value, flag, verdict, evidence quote,
+source (`sourceDocId`/page or URL), provider used, confidence. LLM calls are
+tracked in `ProviderUsage`. It needs no Playwright (it reads stored text).
 
 ---
 
