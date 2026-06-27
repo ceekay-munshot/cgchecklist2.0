@@ -21,6 +21,12 @@ harvests documents itself:
 - **NO manual upload in the primary flow.** Manual upload is a **DEFERRED
   fallback only** — keep a clean interface seam (`SourceDocType.MANUAL_UPLOAD`,
   `FetchedVia.MANUAL`) but build **no upload UI now**.
+- **Harvest ONCE, then iterate offline.** Harvested documents persist to a real
+  database — hosted **Neon Postgres** in CI via the `DATABASE_URL` secret — so
+  Screener is scraped **once**. Re-running a harvest is **idempotent**: it
+  reuses rows (unique `(runId, sourceUrl)`), refreshes the page's
+  `structuredData`, and only re-fetches missing/FAILED documents (a second run
+  is cheap and never re-downloads what we already have).
 
 **2. A run is a LONG-LIVED, RESUMABLE, QUOTA-AWARE BATCH (may span ~5–6 days).**
 Processing runs on **free-tier LLMs under daily rate limits**, so a run is never
@@ -187,8 +193,12 @@ search API, so its `search()` is always `not_available`.)
 - **`AnalysisRun`** — `status` (QUEUED|HARVESTING|HARVESTED|PROCESSING|PARTIAL|DONE|ERROR),
   `createdBy?`, `createdAt`, `lastProcessedAt?`,
   `itemsTotal`/`itemsDone`/`itemsError`, `summaryJson?`.
-- **`SourceDoc`** — harvested doc: `type`, `name`, `sourceUrl`, `fetchedVia`,
-  `fetchStatus`, `storageRef?`, `pages?`.
+- **`SourceDoc`** — harvested doc, unique `(runId, sourceUrl)` so re-runs upsert
+  (never duplicate): `type`, `name`, `sourceUrl`, `fetchedVia`, `fetchStatus`,
+  `storageRef?`, `pages?`, `structuredData?` (Tier-1 typed JSON),
+  `extractedText?` (Tier-2 durable text), `contentHash?` (sha256 — de-dups
+  identical docs within a run, e.g. concall "REC" landing pages → the first is
+  stored, later identical ones become lightweight OK markers).
 - **`ItemResult`** — resumable per-item state, unique `(runId, itemId)`:
   `status`, `flag?`, `verdict?`, `value?`, `evidenceQuote?`, `sourceDocId?`,
   `confidence?`, `isNonNegotiable`, `gatePass?`, `providerUsed?`, `attempts`,
@@ -212,6 +222,12 @@ Optional model overrides: `GEMINI_MODEL`, `GROQ_MODEL`, `MISTRAL_MODEL`,
 `NVIDIA_MODEL`. Copy `.env.example` → `.env` and fill in. `/health` shows any
 blank provider as **not configured**. `SCREENER_*` feed the Phase-3 Playwright
 harvester (sourced from GitHub secrets in CI).
+
+**`DATABASE_URL` is REQUIRED** and points at the **persistent** Postgres — a
+hosted **Neon** database in CI (set as a GitHub secret), a local Postgres in dev
+— so a harvest is written once and analysis iterates against it offline. (The CI
+workflow can fall back to a throwaway service-container DB for pure smoke tests;
+see §10.)
 
 ---
 
@@ -272,32 +288,60 @@ in `lib/harvest/` + CLI `scripts/harvest.ts` (`npm run harvest -- <TICKER>`):
   `ProviderUsage("screener")`; one reused logged-in context per harvest + polite
   rate-limit; prefers the preinstalled Chromium.
 
+**Done (Phase 3b — harvest hardening / lock):** the harvester is now safe to
+build analysis on top of.
+- **Persistent DB.** The CI workflow writes to the `DATABASE_URL` secret
+  (hosted Neon) by default and runs `prisma migrate deploy` (never reset) +
+  idempotent `db:seed` — Screener is scraped **once**, analysis iterates offline.
+  A `workflow_dispatch` boolean `ephemeral` (default false) falls back to a
+  throwaway `postgres:16` service container for smoke tests.
+- **Idempotent re-runs.** `harvestCompany` always refreshes Tier-1
+  `structuredData` (one cheap request; keeps the stored OK page if the refresh
+  fails) and only re-fetches missing/FAILED Tier-2 docs — a second run never
+  re-downloads what is already OK.
+- **Harvest hygiene.** The parser drops "View all"/"All" listing links (no more
+  stray ~12k-char listing SourceDoc) and ranks concall links
+  transcript→PPT→notes→…→recording so the per-category cap keeps the richest
+  docs; Tier 2 de-duplicates identical documents by `contentHash` (sha256) so
+  duplicate concall "REC" landing pages don't persist (or re-download) twice.
+
 **Later phases:** `lib/engine` (`evaluateItem`), `lib/orchestrate` (resumable
 `runAnalysis` over harvested SourceDocs + quota gating), `lib/export`
 (xlsx/pdf/pptx). (`lib/ingest` is now largely covered by `lib/harvest`.)
 
 ---
 
-## 10. CI — live harvest validation (GitHub Actions)
+## 10. CI — live harvest (GitHub Actions)
 
-`/.github/workflows/harvest-validate.yml` validates the **live** Screener
-harvest on a GitHub runner (open egress; creds from repo secrets) — this is
-where the rich Tier-1/Tier-2 path is exercised end-to-end (the sandbox blocks
-`screener.in`).
+`/.github/workflows/harvest-validate.yml` runs the **live** Screener harvest on
+a GitHub runner (open egress; creds from repo secrets) — this is where the rich
+Tier-1/Tier-2 path is exercised end-to-end (the sandbox blocks `screener.in`).
+By default it writes to the **persistent** database, so this is the canonical
+way to harvest a company **once** and keep the data.
 
 **How to run (manual only):** GitHub repo → **Actions** tab → **harvest-validate**
-(left sidebar) → **Run workflow** → enter **ticker** (required) and **exchange**
-(NSE/BSE, default NSE) → **Run workflow**. It's `workflow_dispatch`-only (no
-schedule yet); the "Run workflow" button appears because the file is on the
-default branch.
+(left sidebar) → **Run workflow** → enter **ticker** (required), **exchange**
+(NSE/BSE, default NSE), and **ephemeral** (default **false**) → **Run workflow**.
+It's `workflow_dispatch`-only (no schedule yet); the "Run workflow" button
+appears because the file is on the default branch.
+- **`ephemeral=false` (default):** persists to the `DATABASE_URL` secret
+  (hosted Neon). Re-running the same ticker is **idempotent** — it reuses the
+  company's run, refreshes Tier-1 `structuredData`, and only re-fetches
+  missing/FAILED docs.
+- **`ephemeral=true`:** uses a throwaway `postgres:16` service container — a
+  pure smoke test; **nothing is kept**.
 
 **Required repo secrets** (Settings → Secrets and variables → Actions):
+- `DATABASE_URL` — **required for persistent runs** (hosted Neon Postgres
+  connection string). If it's unset and `ephemeral=false`, the job fails fast
+  with a clear error; re-run with `ephemeral=true` for a no-DB smoke test.
 - `SCREENER_EMAIL`, `SCREENER_PASSWORD` — Screener login (needed for the rich scrape).
 - `FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY` — optional; enable the document
   download fallback.
 
-**What it does:** ephemeral `postgres:16` service → `npm ci` → install the
-matching Playwright Chromium → `prisma generate` + `migrate deploy` + `db:seed`
+**What it does:** resolve `DATABASE_URL` (persistent secret, or the ephemeral
+service when toggled) → `npm ci` → install the matching Playwright Chromium →
+`prisma generate` + **`migrate deploy` (never reset)** + idempotent `db:seed`
 → `npm run harvest -- <ticker> <exchange>`. It prints a summary to the log and
 uploads an artifact **`harvest-<ticker>`** containing `structuredData.json` (the
 `SCREENER_PAGE` structured JSON), `documents.json` (each document SourceDoc:

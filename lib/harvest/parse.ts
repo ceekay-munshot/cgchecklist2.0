@@ -183,6 +183,30 @@ function containerFor($: Cheerio, sec: DocSection): Selection {
 }
 
 /**
+ * A "View all" / "All" listing link is a navigation page, not a filing — it
+ * would otherwise be harvested as a stray (~12k-char) listing SourceDoc. Drop it.
+ */
+function isJunkDoc(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return n === "all" || n.startsWith("view all");
+}
+
+/**
+ * Rank concall links so the analytically-rich documents win the per-category
+ * cap: transcripts first, then PPT, then notes, then anything else, with raw
+ * recording / landing ("REC") pages last (they often resolve to identical
+ * boilerplate and get de-duplicated by content hash at fetch time).
+ */
+function concallRank(label: string): number {
+  const l = label.toLowerCase();
+  if (l.includes("transcript")) return 0;
+  if (l.includes("ppt") || l.includes("presentation")) return 1;
+  if (l.includes("note")) return 2;
+  if (l === "rec" || l.includes("recording")) return 4;
+  return 3;
+}
+
+/**
  * Discover document links (annual reports, concall transcripts/notes/PPT,
  * credit ratings, announcements) from a Screener company page. De-duplicated by
  * URL; the orchestrator applies per-category caps.
@@ -205,7 +229,11 @@ export function extractDocumentLinks(html: string, base = SCREENER_BASE): Docume
     if (!container.length) continue;
 
     if (sec.category === "concall") {
-      // Each <li> groups a date with Transcript/Notes/PPT links.
+      // Each <li> groups a date with Transcript / Notes / PPT / REC links.
+      // Collect, then prefer transcripts/PPT/notes over raw recording ("REC")
+      // landing pages. A stable sort keeps Screener's recent-first order within
+      // each rank, so the per-category cap retains the richest documents.
+      const concalls: Array<{ rank: number; link: DocumentLink }> = [];
       container.find("li").each((_, li) => {
         const date = clean($(li).find("div").first().text());
         $(li)
@@ -214,20 +242,25 @@ export function extractDocumentLinks(html: string, base = SCREENER_BASE): Docume
             const href = $(a).attr("href");
             if (!href) return;
             const label = clean($(a).text());
-            push({
-              type: sec.type,
-              category: sec.category,
-              name: [date, label].filter(Boolean).join(" ").trim() || "Concall",
-              url: absolutize(href, base),
+            if (isJunkDoc(label)) return;
+            concalls.push({
+              rank: concallRank(label),
+              link: {
+                type: sec.type,
+                category: sec.category,
+                name: [date, label].filter(Boolean).join(" ").trim() || "Concall",
+                url: absolutize(href, base),
+              },
             });
           });
       });
+      concalls.sort((a, b) => a.rank - b.rank).forEach((c) => push(c.link));
     } else {
       container.find("a[href]").each((_, a) => {
         const href = $(a).attr("href");
         if (!href) return;
         const name = clean($(a).text());
-        if (!name) return;
+        if (!name || isJunkDoc(name)) return;
         push({
           type: sec.type,
           category: sec.category,

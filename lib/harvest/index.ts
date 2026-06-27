@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { FetchStatus, FetchedVia, SourceDocType } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -53,6 +54,11 @@ function capLinks(links: DocumentLink[]): DocumentLink[] {
   return out;
 }
 
+/** Stable content fingerprint used to de-duplicate identical documents. */
+function sha256(s: string): string {
+  return createHash("sha256").update(s, "utf8").digest("hex");
+}
+
 function summariseFields(s: StructuredWithDocs): string[] {
   const f: string[] = [];
   const rc = Object.keys(s.ratios ?? {}).length;
@@ -79,6 +85,7 @@ interface UpsertInput {
   structuredData?: Prisma.InputJsonValue;
   extractedText?: string | null;
   pages?: number | null;
+  contentHash?: string | null;
   note?: string | null;
 }
 
@@ -94,8 +101,14 @@ async function upsertSourceDoc(runId: string, d: UpsertInput): Promise<void> {
       d.structuredData === undefined
         ? undefined
         : (stripNulDeep(d.structuredData) as Prisma.InputJsonValue),
-    extractedText: d.extractedText ? stripNul(d.extractedText) : undefined,
+    extractedText:
+      d.extractedText === undefined
+        ? undefined
+        : d.extractedText === null
+          ? null
+          : stripNul(d.extractedText),
     pages: d.pages ?? undefined,
+    contentHash: d.contentHash ?? undefined,
     note: d.note ? stripNul(d.note).slice(0, 1000) : undefined,
   };
   await prisma.sourceDoc.upsert({
@@ -181,12 +194,42 @@ export async function harvestCompany({
     }
 
     // ---------------- TIER 1 ----------------
+    // Always re-fetch the company page to REFRESH structuredData — it is a
+    // single, cheap request. If the refresh fails, fall back to the previously
+    // stored OK page so a transient blip never discards good data.
     let links: DocumentLink[] = [];
     const existingPage = await prisma.sourceDoc.findUnique({
       where: { runId_sourceUrl: { runId, sourceUrl: canonicalUrl } },
     });
 
-    if (existingPage?.fetchStatus === "OK" && existingPage.structuredData) {
+    const fetched = await fetchScreenerPage(session, ticker, company.screenerUrl ?? null);
+
+    if (fetched.ok && fetched.html) {
+      summary.screenerUrl = fetched.url;
+      await prisma.company
+        .update({ where: { id: companyId }, data: { screenerUrl: fetched.url } })
+        .catch(() => {});
+      links = capLinks(extractDocumentLinks(fetched.html, SCREENER_BASE));
+      const structured: StructuredWithDocs = {
+        ...parseScreenerPage(fetched.html, {
+          ticker,
+          url: fetched.url,
+          capturedAt: new Date().toISOString(),
+        }),
+        documents: links,
+      };
+      await upsertSourceDoc(runId, {
+        type: "SCREENER_PAGE",
+        name: `Screener page — ${company.name}`,
+        sourceUrl: canonicalUrl,
+        fetchedVia: "SCREENER",
+        fetchStatus: "OK",
+        structuredData: structured as unknown as Prisma.InputJsonValue,
+        note: session?.loggedIn ? null : "logged-out scrape",
+      });
+      summary.tier1 = { status: "OK", via: "SCREENER", fields: summariseFields(structured) };
+    } else if (existingPage?.fetchStatus === "OK" && existingPage.structuredData) {
+      // Refresh failed, but a good page is already stored — keep it.
       const structured = existingPage.structuredData as unknown as StructuredWithDocs;
       links = capLinks((structured.documents ?? []) as DocumentLink[]);
       summary.screenerUrl = company.screenerUrl ?? canonicalUrl;
@@ -194,50 +237,29 @@ export async function harvestCompany({
         status: "OK",
         via: existingPage.fetchedVia,
         fields: summariseFields(structured),
-        note: "reused (already OK)",
+        note: `refresh failed (${fetched.note ?? "unknown"}); kept stored page`,
       };
     } else {
-      const fetched = await fetchScreenerPage(session, ticker, company.screenerUrl ?? null);
+      const note = fetched.note ?? session?.note ?? "could not load Screener page";
       summary.screenerUrl = fetched.url;
-      await prisma.company
-        .update({ where: { id: companyId }, data: { screenerUrl: fetched.url } })
-        .catch(() => {});
-
-      if (fetched.ok && fetched.html) {
-        links = capLinks(extractDocumentLinks(fetched.html, SCREENER_BASE));
-        const structured: StructuredWithDocs = {
-          ...parseScreenerPage(fetched.html, {
-            ticker,
-            url: fetched.url,
-            capturedAt: new Date().toISOString(),
-          }),
-          documents: links,
-        };
-        await upsertSourceDoc(runId, {
-          type: "SCREENER_PAGE",
-          name: `Screener page — ${company.name}`,
-          sourceUrl: canonicalUrl,
-          fetchedVia: "SCREENER",
-          fetchStatus: "OK",
-          structuredData: structured as unknown as Prisma.InputJsonValue,
-          note: session?.loggedIn ? null : "logged-out scrape",
-        });
-        summary.tier1 = { status: "OK", via: "SCREENER", fields: summariseFields(structured) };
-      } else {
-        const note = fetched.note ?? session?.note ?? "could not load Screener page";
-        await upsertSourceDoc(runId, {
-          type: "SCREENER_PAGE",
-          name: `Screener page — ${company.name}`,
-          sourceUrl: canonicalUrl,
-          fetchedVia: "SCREENER",
-          fetchStatus: "FAILED",
-          note,
-        });
-        summary.tier1 = { status: "FAILED", via: "SCREENER", fields: [], note };
-      }
+      await upsertSourceDoc(runId, {
+        type: "SCREENER_PAGE",
+        name: `Screener page — ${company.name}`,
+        sourceUrl: canonicalUrl,
+        fetchedVia: "SCREENER",
+        fetchStatus: "FAILED",
+        note,
+      });
+      summary.tier1 = { status: "FAILED", via: "SCREENER", fields: [], note };
     }
 
     // ---------------- TIER 2 ----------------
+    // De-duplicate identical documents by content hash within the run (e.g.
+    // several concall "REC" links that resolve to the same landing page). The
+    // first occurrence is stored with its text; later identical ones become
+    // lightweight OK markers (no duplicate text, never re-downloaded).
+    const seenHashes = new Map<string, string>(); // contentHash -> primary sourceUrl
+
     for (const link of links) {
       // Per-document try/catch: one document's failure (download, parse, or a
       // persist error) must never abort the rest of the harvest.
@@ -246,6 +268,11 @@ export async function harvestCompany({
           where: { runId_sourceUrl: { runId, sourceUrl: link.url } },
         });
         if (existingDoc?.fetchStatus === "OK") {
+          // Already harvested: prime the hash map (so a not-yet-fetched
+          // duplicate later in this run is recognised) and skip the download.
+          if (existingDoc.contentHash && !seenHashes.has(existingDoc.contentHash)) {
+            seenHashes.set(existingDoc.contentHash, existingDoc.sourceUrl);
+          }
           summary.tier2.push({
             name: link.name,
             type: link.type,
@@ -253,11 +280,43 @@ export async function harvestCompany({
             via: existingDoc.fetchedVia,
             status: "OK",
             pages: existingDoc.pages ?? undefined,
-            note: "reused",
+            note: existingDoc.note ?? "reused",
           });
           continue;
         }
+
         const r = await downloadAndExtract(link, session);
+        const hash = r.status === "OK" && r.text ? sha256(r.text) : null;
+        const duplicateOf = hash ? seenHashes.get(hash) : undefined;
+
+        if (hash && duplicateOf && duplicateOf !== link.url) {
+          // Identical content already stored under another URL — keep only a
+          // marker so we never persist (or re-download) the same bytes twice.
+          const note = `duplicate of ${duplicateOf}`;
+          await upsertSourceDoc(runId, {
+            type: link.type,
+            name: link.name,
+            sourceUrl: link.url,
+            fetchedVia: r.via,
+            fetchStatus: "OK",
+            extractedText: null,
+            pages: r.pages ?? null,
+            contentHash: hash,
+            note,
+          });
+          summary.tier2.push({
+            name: link.name,
+            type: link.type,
+            category: link.category,
+            via: r.via,
+            status: "OK",
+            pages: r.pages,
+            note,
+          });
+          continue;
+        }
+
+        if (hash) seenHashes.set(hash, link.url);
         await upsertSourceDoc(runId, {
           type: link.type,
           name: link.name,
@@ -266,6 +325,7 @@ export async function harvestCompany({
           fetchStatus: r.status,
           extractedText: r.text ?? null,
           pages: r.pages ?? null,
+          contentHash: hash,
           note: r.note ?? null,
         });
         summary.tier2.push({

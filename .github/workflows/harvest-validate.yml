@@ -1,7 +1,12 @@
 name: harvest-validate
 
-# Manual-only: validates the live Screener.in harvest end-to-end on a GitHub
-# runner (open egress + creds from secrets). No schedule — that comes later.
+# Manual-only: harvests the live Screener.in data end-to-end on a GitHub runner
+# (open egress + creds from secrets). By default it writes to the PERSISTENT
+# database (the DATABASE_URL repo secret — hosted Neon Postgres) so Screener is
+# scraped ONCE and later analysis iterates offline. Re-running for the same
+# ticker is cheap and idempotent (it reuses rows and only re-fetches what is
+# missing/FAILED). Flip `ephemeral` on for a throwaway smoke test against a
+# fresh service-container Postgres instead.
 on:
   workflow_dispatch:
     inputs:
@@ -17,13 +22,19 @@ on:
         options:
           - NSE
           - BSE
+      ephemeral:
+        description: "Use a throwaway Postgres service container instead of the persistent DATABASE_URL secret (smoke test only — nothing is kept)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   harvest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # Ephemeral Postgres for this smoke test (no persistence needed yet).
+    # Throwaway Postgres — only USED when `ephemeral=true` (service containers
+    # cannot be conditional, so it always starts; the persistent run ignores it).
     services:
       postgres:
         image: postgres:16
@@ -40,7 +51,8 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://cg:cg@localhost:5432/cgchecklist?schema=public
+      # DATABASE_URL is resolved at runtime (persistent secret vs ephemeral
+      # service) in the "Resolve DATABASE_URL" step below — not hardcoded here.
       # Screener login (required for the rich Tier-1 scrape) + doc-fallback keys.
       SCREENER_EMAIL: ${{ secrets.SCREENER_EMAIL }}
       SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
@@ -57,6 +69,27 @@ jobs:
           node-version: "22"
           cache: npm
 
+      # Resolve DATABASE_URL: persistent (DATABASE_URL secret, default) unless
+      # ephemeral=true (throwaway service container). Fail fast if neither is
+      # available. Values come via env (not interpolated) to avoid injection;
+      # GitHub auto-masks the secret in logs.
+      - name: Resolve DATABASE_URL
+        env:
+          EPHEMERAL: ${{ inputs.ephemeral }}
+          SECRET_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SERVICE_DATABASE_URL: postgresql://cg:cg@localhost:5432/cgchecklist?schema=public
+        run: |
+          if [ "$EPHEMERAL" = "true" ]; then
+            echo "Using EPHEMERAL Postgres service container (nothing is kept)."
+            echo "DATABASE_URL=$SERVICE_DATABASE_URL" >> "$GITHUB_ENV"
+          elif [ -n "$SECRET_DATABASE_URL" ]; then
+            echo "Using PERSISTENT database from the DATABASE_URL repo secret."
+            echo "DATABASE_URL=$SECRET_DATABASE_URL" >> "$GITHUB_ENV"
+          else
+            echo "::error::DATABASE_URL secret is not set and ephemeral=false. Set the DATABASE_URL repo secret (persistent Neon) or re-run with ephemeral=true."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
@@ -64,6 +97,8 @@ jobs:
       - name: Install Playwright Chromium
         run: node node_modules/playwright-core/cli.js install --with-deps chromium
 
+      # migrate deploy (NEVER reset) applies pending migrations idempotently;
+      # db:seed upserts the checklist idempotently — both safe on a persistent DB.
       - name: Prisma generate, migrate & seed
         run: |
           npx prisma generate

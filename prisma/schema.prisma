@@ -169,6 +169,7 @@ model SourceDoc {
   pages          Int?
   structuredData Json? // Tier-1: clean typed JSON (financials, shareholding, pledging, …)
   extractedText  String?       @db.Text // Tier-2: durable extracted text (persists for later processing)
+  contentHash    String? // sha256 of extracted content — de-dups identical docs (e.g. concall "REC" landing pages) within a run
   note           String? // short human note, especially on EMPTY / FAILED
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -179,6 +180,7 @@ model SourceDoc {
   @@unique([runId, sourceUrl])
   @@index([runId])
   @@index([fetchStatus])
+  @@index([runId, contentHash])
 }
 
 /// The resumable per-item result for one checklist item within one run.

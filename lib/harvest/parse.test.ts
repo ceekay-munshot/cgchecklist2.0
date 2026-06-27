@@ -70,4 +70,25 @@ describe("extractDocumentLinks", () => {
     expect(t?.name).toContain("Aug 2023");
     expect(t?.url.startsWith("https://")).toBe(true);
   });
+
+  it("drops 'All' / 'View all' listing links (navigation, not filings)", () => {
+    expect(links.some((l) => /^all$/i.test(l.name) || /^view all/i.test(l.name))).toBe(false);
+    // the announcements card's "All" link is gone; only real filings remain
+    expect(links.filter((l) => l.category === "announcement").length).toBe(2);
+  });
+
+  it("ranks concall transcripts/PPT ahead of raw recording (REC) links", () => {
+    const concalls = links.filter((l) => l.category === "concall");
+    const recIdx = concalls.findIndex((l) => /\bREC\b/.test(l.name));
+    const lastTranscriptIdx = concalls
+      .map((l) => /Transcript/.test(l.name))
+      .lastIndexOf(true);
+    const pptIdx = concalls.findIndex((l) => /PPT/.test(l.name));
+    expect(recIdx).toBeGreaterThan(-1);
+    // REC ranks after every transcript and after the PPT …
+    expect(recIdx).toBeGreaterThan(lastTranscriptIdx);
+    expect(recIdx).toBeGreaterThan(pptIdx);
+    // … and is the very last (lowest-priority) concall link
+    expect(recIdx).toBe(concalls.length - 1);
+  });
 });
