@@ -1,0 +1,94 @@
+name: harvest-validate
+
+# Manual-only: validates the live Screener.in harvest end-to-end on a GitHub
+# runner (open egress + creds from secrets). No schedule — that comes later.
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Company ticker (e.g. TCS, RELIANCE)"
+        required: true
+        type: string
+      exchange:
+        description: "Exchange"
+        required: false
+        default: NSE
+        type: choice
+        options:
+          - NSE
+          - BSE
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Ephemeral Postgres for this smoke test (no persistence needed yet).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cg
+          POSTGRES_PASSWORD: cg
+          POSTGRES_DB: cgchecklist
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cg -d cgchecklist"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://cg:cg@localhost:5432/cgchecklist?schema=public
+      # Screener login (required for the rich Tier-1 scrape) + doc-fallback keys.
+      SCREENER_EMAIL: ${{ secrets.SCREENER_EMAIL }}
+      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      SCRAPEDO_API_KEY: ${{ secrets.SCRAPEDO_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Install the exact Chromium revision playwright-core expects (+ OS deps).
+      - name: Install Playwright Chromium
+        run: node node_modules/playwright-core/cli.js install --with-deps chromium
+
+      - name: Prisma generate, migrate & seed
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run db:seed
+
+      # Inputs are passed via env (not interpolated into the shell) to avoid
+      # script injection. A graceful harvest degradation exits 0 — the job stays
+      # green and fetchStatus is surfaced in the report below.
+      - name: Harvest ${{ inputs.ticker }}
+        env:
+          TICKER: ${{ inputs.ticker }}
+          EXCHANGE: ${{ inputs.exchange }}
+        run: npm run harvest -- "$TICKER" "$EXCHANGE"
+
+      - name: Build harvest report (structuredData + documents)
+        if: always()
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: node --env-file-if-exists=.env --import tsx scripts/harvest-report.ts "$TICKER"
+
+      - name: Upload harvest artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harvest-${{ inputs.ticker }}
+          path: harvest-report/
+          if-no-files-found: warn

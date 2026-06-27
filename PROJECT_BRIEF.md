@@ -184,7 +184,7 @@ search API, so its `search()` is always `not_available`.)
 **Run data:**
 - **`Company`** — `name`, `ticker`, `exchange` (NSE|BSE), `sector`, `cin?`,
   `screenerUrl?`. (Analyst supplies only this; docs are harvested.)
-- **`AnalysisRun`** — `status` (QUEUED|HARVESTING|PROCESSING|PARTIAL|DONE|ERROR),
+- **`AnalysisRun`** — `status` (QUEUED|HARVESTING|HARVESTED|PROCESSING|PARTIAL|DONE|ERROR),
   `createdBy?`, `createdAt`, `lastProcessedAt?`,
   `itemsTotal`/`itemsDone`/`itemsError`, `summaryJson?`.
 - **`SourceDoc`** — harvested doc: `type`, `name`, `sourceUrl`, `fetchedVia`,
@@ -265,7 +265,8 @@ in `lib/harvest/` + CLI `scripts/harvest.ts` (`npm run harvest -- <TICKER>`):
   text + page count via `unpdf` → one SourceDoc each with durable
   `extractedText` (persists for processing days later).
 - `harvestCompany({companyId, runId})` sets `status=HARVESTING`, runs Tier 1 →
-  Tier 2, leaves the run `PROCESSING`-ready. **Idempotent + resumable** (upsert
+  Tier 2, leaves the run `HARVESTED` (acquisition complete, ready for
+  processing). **Idempotent + resumable** (upsert
   by `(runId, sourceUrl)`; skips OK, retries FAILED). **Graceful** — never
   crashes; login/table/download failures become FAILED/EMPTY + a `note`. Tracks
   `ProviderUsage("screener")`; one reused logged-in context per harvest + polite
@@ -277,7 +278,35 @@ in `lib/harvest/` + CLI `scripts/harvest.ts` (`npm run harvest -- <TICKER>`):
 
 ---
 
-## 10. Local environment notes (this sandbox)
+## 10. CI — live harvest validation (GitHub Actions)
+
+`/.github/workflows/harvest-validate.yml` validates the **live** Screener
+harvest on a GitHub runner (open egress; creds from repo secrets) — this is
+where the rich Tier-1/Tier-2 path is exercised end-to-end (the sandbox blocks
+`screener.in`).
+
+**How to run (manual only):** GitHub repo → **Actions** tab → **harvest-validate**
+(left sidebar) → **Run workflow** → enter **ticker** (required) and **exchange**
+(NSE/BSE, default NSE) → **Run workflow**. It's `workflow_dispatch`-only (no
+schedule yet); the "Run workflow" button appears because the file is on the
+default branch.
+
+**Required repo secrets** (Settings → Secrets and variables → Actions):
+- `SCREENER_EMAIL`, `SCREENER_PASSWORD` — Screener login (needed for the rich scrape).
+- `FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY` — optional; enable the document
+  download fallback.
+
+**What it does:** ephemeral `postgres:16` service → `npm ci` → install the
+matching Playwright Chromium → `prisma generate` + `migrate deploy` + `db:seed`
+→ `npm run harvest -- <ticker> <exchange>`. It prints a summary to the log and
+uploads an artifact **`harvest-<ticker>`** containing `structuredData.json` (the
+`SCREENER_PAGE` structured JSON), `documents.json` (each document SourceDoc:
+type, pages, fetchStatus, fetchedVia) and `summary.txt`. A graceful harvest
+degradation does **not** fail the job — `fetchStatus` is surfaced in the report.
+
+---
+
+## 11. Local environment notes (this sandbox)
 
 - A local Postgres 16 cluster is used for development
   (`DATABASE_URL=postgresql://cg:cg@localhost:5432/cgchecklist`).
@@ -292,14 +321,14 @@ in `lib/harvest/` + CLI `scripts/harvest.ts` (`npm run harvest -- <TICKER>`):
   here. Chromium IS preinstalled (`/opt/pw-browsers/chromium`) and launches. The
   harvester is verified offline (cheerio parser fixture tests) and live via its
   **graceful-degradation + idempotency** paths (`npm run harvest -- TCS` →
-  `SCREENER_PAGE` FAILED with a note, run still completes → PROCESSING, re-run
+  `SCREENER_PAGE` FAILED with a note, run still completes → HARVESTED, re-run
   upserts the same row). The rich-data path is unit-tested against a
   Screener-structured fixture; verifying it end-to-end needs a reachable
   Screener + real creds (e.g. CI with the GitHub secrets).
 
 ---
 
-## 11. Acceptance (initial session) — ✔
+## 12. Acceptance (initial session) — ✔
 
 `npm run dev` boots · `/health` renders provider statuses · the Prisma schema
 migrates · `PROJECT_BRIEF.md` exists.

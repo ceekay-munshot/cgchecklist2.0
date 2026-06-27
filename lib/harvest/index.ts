@@ -273,9 +273,10 @@ export async function harvestCompany({
     summary.tier1.note = `${summary.tier1.note ? summary.tier1.note + "; " : ""}harvest error: ${(e as Error).message}`;
   } finally {
     if (session) await session.close().catch(() => {});
-    // Leave the run ready for the (separate, later) processing phase.
+    // Acquisition is complete (success or graceful degradation) — mark the run
+    // HARVESTED so the separate, later processing phase can pick it up.
     await prisma.analysisRun
-      .update({ where: { id: runId }, data: { status: "PROCESSING", lastProcessedAt: new Date() } })
+      .update({ where: { id: runId }, data: { status: "HARVESTED", lastProcessedAt: new Date() } })
       .catch(() => {});
   }
 

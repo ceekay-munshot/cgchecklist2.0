@@ -40,6 +40,7 @@ enum Exchange {
 enum RunStatus {
   QUEUED
   HARVESTING
+  HARVESTED // acquisition complete, ready for processing
   PROCESSING
   PARTIAL
   DONE
