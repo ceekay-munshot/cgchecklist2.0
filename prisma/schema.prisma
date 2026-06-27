@@ -47,6 +47,7 @@ enum RunStatus {
 }
 
 enum SourceDocType {
+  SCREENER_PAGE // Tier-1 structured scrape of the Screener.in company page
   ANNUAL_REPORT
   EARNINGS_PDF
   ANNOUNCEMENT
@@ -155,21 +156,28 @@ model AnalysisRun {
 /// A document harvested for a run (Screener.in / web research / — deferred —
 /// a manual upload).
 model SourceDoc {
-  id          String        @id @default(cuid())
-  run         AnalysisRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
-  runId       String
-  type        SourceDocType
-  name        String
-  sourceUrl   String
-  fetchedVia  FetchedVia
-  fetchStatus FetchStatus   @default(OK)
-  storageRef  String? // path / object key to the stored raw file
-  pages       Int?
-  createdAt   DateTime      @default(now())
+  id             String        @id @default(cuid())
+  run            AnalysisRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId          String
+  type           SourceDocType
+  name           String
+  sourceUrl      String
+  fetchedVia     FetchedVia
+  fetchStatus    FetchStatus   @default(OK)
+  storageRef     String? // path / object key to the stored raw file
+  pages          Int?
+  structuredData Json? // Tier-1: clean typed JSON (financials, shareholding, pledging, …)
+  extractedText  String?       @db.Text // Tier-2: durable extracted text (persists for later processing)
+  note           String? // short human note, especially on EMPTY / FAILED
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   itemResults ItemResult[]
 
+  // one row per (run, url) → re-running a harvest upserts instead of duplicating
+  @@unique([runId, sourceUrl])
   @@index([runId])
+  @@index([fetchStatus])
 }
 
 /// The resumable per-item result for one checklist item within one run.

@@ -1,0 +1,124 @@
+<!doctype html>
+<!-- Representative subset of a Screener.in company page (consolidated view),
+     mirroring the real DOM structure the parser targets. For offline tests. -->
+<html>
+  <body>
+    <h1>Acme Industries Ltd</h1>
+    <div class="company-profile"><p class="about">Acme makes widgets and gadgets across India.</p></div>
+
+    <ul id="top-ratios">
+      <li class="flex flex-space-between"><span class="name">Market Cap</span><span class="nowrap value">₹ <span class="number">1,23,456</span> Cr.</span></li>
+      <li class="flex flex-space-between"><span class="name">Current Price</span><span class="nowrap value">₹ <span class="number">3,210</span></span></li>
+      <li class="flex flex-space-between"><span class="name">Stock P/E</span><span class="nowrap value"><span class="number">28.4</span></span></li>
+      <li class="flex flex-space-between"><span class="name">ROCE</span><span class="nowrap value"><span class="number">22.1</span> %</span></li>
+      <li class="flex flex-space-between"><span class="name">ROE</span><span class="nowrap value"><span class="number">19.7</span> %</span></li>
+      <li class="flex flex-space-between"><span class="name">Debt to equity</span><span class="nowrap value"><span class="number">0.18</span></span></li>
+      <li class="flex flex-space-between"><span class="name">Dividend Yield</span><span class="nowrap value"><span class="number">1.20</span> %</span></li>
+      <li class="flex flex-space-between"><span class="name">Book Value</span><span class="nowrap value">₹ <span class="number">512</span></span></li>
+    </ul>
+
+    <section id="profit-loss">
+      <h2>Profit & Loss</h2>
+      <table class="data-table">
+        <thead><tr><th></th><th>Mar 2021</th><th>Mar 2022</th><th>Mar 2023</th><th>TTM</th></tr></thead>
+        <tbody>
+          <tr><td class="text">Sales&nbsp;<button class="button-plain">+</button></td><td>10,000</td><td>12,500</td><td>15,000</td><td>16,200</td></tr>
+          <tr><td class="text">Expenses&nbsp;+</td><td>7,800</td><td>9,500</td><td>11,200</td><td>12,000</td></tr>
+          <tr><td class="text">Operating Profit</td><td>2,200</td><td>3,000</td><td>3,800</td><td>4,200</td></tr>
+          <tr><td class="text">OPM %</td><td>22%</td><td>24%</td><td>25%</td><td>26%</td></tr>
+          <tr><td class="text">Net Profit&nbsp;+</td><td>1,500</td><td>2,050</td><td>2,600</td><td>2,900</td></tr>
+          <tr><td class="text">EPS in Rs</td><td>41.0</td><td>56.0</td><td>71.0</td><td>79.0</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="cash-flow">
+      <h2>Cash Flows</h2>
+      <table class="data-table">
+        <thead><tr><th></th><th>Mar 2021</th><th>Mar 2022</th><th>Mar 2023</th></tr></thead>
+        <tbody>
+          <tr><td class="text">Cash from Operating Activity&nbsp;+</td><td>1,400</td><td>1,900</td><td>2,500</td></tr>
+          <tr><td class="text">Cash from Investing Activity&nbsp;+</td><td>-800</td><td>-1,000</td><td>-1,200</td></tr>
+          <tr><td class="text">Cash from Financing Activity&nbsp;+</td><td>-500</td><td>-700</td><td>-1,100</td></tr>
+          <tr><td class="text">Net Cash Flow</td><td>100</td><td>200</td><td>200</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ratios">
+      <h2>Ratios</h2>
+      <table class="data-table">
+        <thead><tr><th></th><th>Mar 2021</th><th>Mar 2022</th><th>Mar 2023</th></tr></thead>
+        <tbody>
+          <tr><td class="text">Debtor Days</td><td>45</td><td>43</td><td>40</td></tr>
+          <tr><td class="text">Working Capital Days</td><td>60</td><td>58</td><td>55</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="shareholding">
+      <h2>Shareholding Pattern</h2>
+      <div id="quarterly-shp">
+        <table class="data-table">
+          <thead><tr><th></th><th>Dec 2022</th><th>Mar 2023</th><th>Jun 2023</th><th>Sep 2023</th></tr></thead>
+          <tbody>
+            <tr><td class="text">Promoters&nbsp;+</td><td>55.10%</td><td>55.10%</td><td>54.80%</td><td>54.80%</td></tr>
+            <tr><td class="text">FIIs&nbsp;+</td><td>18.20%</td><td>18.90%</td><td>19.40%</td><td>20.10%</td></tr>
+            <tr><td class="text">DIIs&nbsp;+</td><td>12.30%</td><td>12.10%</td><td>12.00%</td><td>11.80%</td></tr>
+            <tr><td class="text">Public&nbsp;+</td><td>14.40%</td><td>13.90%</td><td>13.80%</td><td>13.30%</td></tr>
+            <tr><td class="text">Pledged&nbsp;+</td><td>2.00%</td><td>1.50%</td><td>1.50%</td><td>0.00%</td></tr>
+            <tr><td class="text">No. of Shareholders</td><td>1,20,000</td><td>1,25,000</td><td>1,30,000</td><td>1,33,000</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="peers">
+      <h2>Peers</h2>
+      <table>
+        <thead><tr><th>Name</th><th>CMP</th><th>P/E</th><th>Mar Cap</th></tr></thead>
+        <tbody>
+          <tr><td>Beta Ltd</td><td>1,200</td><td>25.1</td><td>80,000</td></tr>
+          <tr><td>Gamma Ltd</td><td>900</td><td>31.0</td><td>60,000</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div id="analysis">
+      <div class="pros"><h3>Pros</h3><ul><li>Company is almost debt free.</li><li>Healthy ROE of 19.7%.</li></ul></div>
+      <div class="cons"><h3>Cons</h3><ul><li>Stock is trading at a high P/E.</li><li>Promoter holding has decreased.</li></ul></div>
+    </div>
+
+    <div id="documents">
+      <div class="documents annual-reports flex-column">
+        <h3>Annual reports</h3>
+        <ul class="list-links">
+          <li><a href="https://www.bseindia.com/ar/FY2023.pdf" target="_blank">Financial Year 2023 <span class="ink-600">from bse</span></a></li>
+          <li><a href="https://www.bseindia.com/ar/FY2022.pdf" target="_blank">Financial Year 2022 <span class="ink-600">from bse</span></a></li>
+          <li><a href="https://www.bseindia.com/ar/FY2021.pdf" target="_blank">Financial Year 2021 <span class="ink-600">from bse</span></a></li>
+          <li><a href="https://www.bseindia.com/ar/FY2020.pdf" target="_blank">Financial Year 2020 <span class="ink-600">from bse</span></a></li>
+        </ul>
+      </div>
+      <div class="documents concalls flex-column">
+        <h3>Concalls</h3>
+        <ul class="list-links">
+          <li class="flex"><div class="ink-600 nowrap">Aug 2023</div><a class="concall-link" href="https://www.bseindia.com/concall/aug2023-transcript.pdf">Transcript</a><a class="concall-link" href="https://www.bseindia.com/concall/aug2023-ppt.pdf">PPT</a></li>
+          <li class="flex"><div class="ink-600 nowrap">May 2023</div><a class="concall-link" href="https://www.bseindia.com/concall/may2023-transcript.pdf">Transcript</a></li>
+        </ul>
+      </div>
+      <div class="documents credit-ratings flex-column">
+        <h3>Credit ratings</h3>
+        <ul class="list-links">
+          <li><a href="https://www.crisil.com/acme-2023.pdf" target="_blank">Rating update - Aug 2023</a></li>
+        </ul>
+      </div>
+      <div class="documents announcements flex-column">
+        <h3>Announcements</h3>
+        <ul class="list-links">
+          <li><a href="https://www.bseindia.com/ann/resignation-cfo.pdf">Resignation of CFO</a></li>
+          <li><a href="https://www.bseindia.com/ann/board-meeting.pdf">Outcome of Board Meeting</a></li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>

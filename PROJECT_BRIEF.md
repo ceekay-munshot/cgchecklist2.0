@@ -67,6 +67,9 @@ An internal **Corporate Governance (CG) Checklist** analysis dashboard for
 - **Postgres** via **Prisma 6** (`prisma-client-js`; client imported from
   `@prisma/client`).
 - **ajv** for JSON-schema validation.
+- **Harvester (Phase 3):** `playwright-core` (uses the preinstalled Chromium),
+  `cheerio` (pure HTML parsing), `unpdf` (PDF text + page map), `tsx` (run TS
+  scripts/CLI).
 
 ### Next.js 16 gotchas already handled (keep following these)
 - `next lint` is **removed** → `npm run lint` runs `eslint` directly.
@@ -97,6 +100,13 @@ lib/
   health.ts              # aggregates provider + DB health
   health-types.ts        # ProviderStatus + interpretHttpPing (shared)
   checklist.ts           # checklist loaders + itemKind (NUMERIC|QUALITATIVE)
+  usage.ts               # ProviderUsage (per-provider daily quota) helper
+  harvest/               # Phase-3 Screener harvester (Playwright + cheerio)
+    browser.ts           # one reused logged-in Chromium context (login, fetch, download)
+    parse.ts             # pure cheerio parsers (structured data + doc links) — tested
+    documents.ts         # download + unpdf text extract, WebResearcher fallback
+    index.ts             # harvestCompany() orchestrator (idempotent, resilient)
+    types.ts
   llm/                   # LLM provider clients — ONE LlmClient interface
     types.ts             # CompleteOpts, LlmClient, ProviderModule, errors
     json.ts              # JSON extraction + ajv validation + retry driver
@@ -111,6 +121,7 @@ lib/
   export/                # Excel / PDF / PPTX writers (STUB)
 data/                    # checklist.json (16 sections / 106 items)
 prisma/                  # schema.prisma + migrations/ + seed.mts
+scripts/                 # harvest.ts (CLI: npm run harvest -- <TICKER>)
 ```
 
 ---
@@ -216,6 +227,7 @@ npm run db:generate  # prisma generate
 npm run db:studio    # prisma studio
 npm run db:seed      # prisma db seed (loads data/checklist.json)
 npm test             # vitest run
+npm run harvest -- <TICKER> [NSE|BSE]   # Phase-3 Screener harvest of one company
 ```
 
 Pages: `/` (dashboard), `/health` (provider statuses), `/api/health` (JSON).
@@ -241,10 +253,27 @@ load it (`npm run db:seed` → 16 sections / 106 items, re-runnable). vitest (6/
 covers `itemKind` on the five samples (A1-01, A3-02, A13-02, A2-01, A8-01), the
 106 / 16 counts, and id uniqueness.
 
-**Later phases:** `lib/ingest` (extract PDFs/filings), `lib/engine`
-(`evaluateItem`), `lib/orchestrate` (resumable `runAnalysis` + persistence +
-quota gating), `lib/export` (xlsx/pdf/pptx); **Phase 3** Playwright Screener
-harvester.
+**Done (Phase 3 — Screener harvester):** two-tier, fully-automated acquisition
+in `lib/harvest/` + CLI `scripts/harvest.ts` (`npm run harvest -- <TICKER>`):
+- **Tier 1** — Playwright logs in (creds from env) and fetches the rendered
+  company page; a pure cheerio parser (`parse.ts`) extracts top ratios,
+  P&L/BS/CF/ratios tables, quarters, shareholding incl. **pledged %**, peers,
+  pros/cons → one `SCREENER_PAGE` SourceDoc with rich `structuredData` (answers
+  most NUMERIC items, ~zero LLM).
+- **Tier 2** — discovers annual reports / concalls / credit ratings /
+  announcements, downloads each (browser → WebResearcher fallback), extracts
+  text + page count via `unpdf` → one SourceDoc each with durable
+  `extractedText` (persists for processing days later).
+- `harvestCompany({companyId, runId})` sets `status=HARVESTING`, runs Tier 1 →
+  Tier 2, leaves the run `PROCESSING`-ready. **Idempotent + resumable** (upsert
+  by `(runId, sourceUrl)`; skips OK, retries FAILED). **Graceful** — never
+  crashes; login/table/download failures become FAILED/EMPTY + a `note`. Tracks
+  `ProviderUsage("screener")`; one reused logged-in context per harvest + polite
+  rate-limit; prefers the preinstalled Chromium.
+
+**Later phases:** `lib/engine` (`evaluateItem`), `lib/orchestrate` (resumable
+`runAnalysis` over harvested SourceDocs + quota gating), `lib/export`
+(xlsx/pdf/pptx). (`lib/ingest` is now largely covered by `lib/harvest`.)
 
 ---
 
@@ -258,6 +287,15 @@ harvester.
   `debian-openssl-3.0.x` target from `https://binaries.prisma.sh/all_commits/<enginesVersion>/...`
   with `curl` (which honors the proxy). In a normal environment a plain
   `npm install` handles engines automatically — do **not** commit engine paths.
+- **`screener.in` is blocked by this sandbox's egress policy (HTTP 403 at the
+  proxy)** and `SCREENER_*` creds are blank, so a *live* harvest cannot run
+  here. Chromium IS preinstalled (`/opt/pw-browsers/chromium`) and launches. The
+  harvester is verified offline (cheerio parser fixture tests) and live via its
+  **graceful-degradation + idempotency** paths (`npm run harvest -- TCS` →
+  `SCREENER_PAGE` FAILED with a note, run still completes → PROCESSING, re-run
+  upserts the same row). The rich-data path is unit-tested against a
+  Screener-structured fixture; verifying it end-to-end needs a reachable
+  Screener + real creds (e.g. CI with the GitHub secrets).
 
 ---
 
