@@ -3,8 +3,10 @@ import type { FetchedVia } from "@prisma/client";
 import { webResearcher } from "@/lib/scrape";
 import type { DocFetchResult, DocumentLink } from "./types";
 import type { ScreenerSession } from "./browser";
+import { stripNul } from "./sanitize";
 
 const MAX_TEXT_CHARS = 800_000; // guard against pathological docs
+
 
 async function pdfToText(
   buffer: Uint8Array,
@@ -19,7 +21,7 @@ async function pdfToText(
     .join("\n\n")
     .trim()
     .slice(0, MAX_TEXT_CHARS);
-  return { text, pages };
+  return { text: stripNul(text), pages };
 }
 
 function looksLikePdf(buffer: Buffer, contentType?: string): boolean {
@@ -66,7 +68,7 @@ export async function downloadAndExtract(
             note = `pdf parse error: ${(e as Error).message}`;
           }
         } else {
-          const text = dl.buffer.toString("utf8").slice(0, MAX_TEXT_CHARS);
+          const text = stripNul(dl.buffer.toString("utf8").slice(0, MAX_TEXT_CHARS));
           return { ok: true, status: "OK", via: "SCREENER", text };
         }
       } else {
@@ -85,7 +87,7 @@ export async function downloadAndExtract(
         ok: true,
         status: "OK",
         via: viaForProvider(res.provider),
-        text: res.content.slice(0, MAX_TEXT_CHARS),
+        text: stripNul(res.content.slice(0, MAX_TEXT_CHARS)),
         note,
       };
     }

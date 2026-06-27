@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { openScreenerSession, type ScreenerSession } from "./browser";
 import { extractDocumentLinks, parseScreenerPage } from "./parse";
 import { downloadAndExtract } from "./documents";
+import { stripNul, stripNulDeep } from "./sanitize";
 import type {
   DocumentLink,
   HarvestSummary,
@@ -81,16 +82,21 @@ interface UpsertInput {
   note?: string | null;
 }
 
+
 async function upsertSourceDoc(runId: string, d: UpsertInput): Promise<void> {
   const data = {
     type: d.type,
     name: d.name,
     fetchedVia: d.fetchedVia,
     fetchStatus: d.fetchStatus,
-    structuredData: d.structuredData,
-    extractedText: d.extractedText ?? undefined,
+    // Postgres rejects NUL (0x00) in TEXT/JSONB — strip before writing.
+    structuredData:
+      d.structuredData === undefined
+        ? undefined
+        : (stripNulDeep(d.structuredData) as Prisma.InputJsonValue),
+    extractedText: d.extractedText ? stripNul(d.extractedText) : undefined,
     pages: d.pages ?? undefined,
-    note: d.note ?? undefined,
+    note: d.note ? stripNul(d.note).slice(0, 1000) : undefined,
   };
   await prisma.sourceDoc.upsert({
     where: { runId_sourceUrl: { runId, sourceUrl: d.sourceUrl } },
@@ -233,41 +239,64 @@ export async function harvestCompany({
 
     // ---------------- TIER 2 ----------------
     for (const link of links) {
-      const existingDoc = await prisma.sourceDoc.findUnique({
-        where: { runId_sourceUrl: { runId, sourceUrl: link.url } },
-      });
-      if (existingDoc?.fetchStatus === "OK") {
+      // Per-document try/catch: one document's failure (download, parse, or a
+      // persist error) must never abort the rest of the harvest.
+      try {
+        const existingDoc = await prisma.sourceDoc.findUnique({
+          where: { runId_sourceUrl: { runId, sourceUrl: link.url } },
+        });
+        if (existingDoc?.fetchStatus === "OK") {
+          summary.tier2.push({
+            name: link.name,
+            type: link.type,
+            category: link.category,
+            via: existingDoc.fetchedVia,
+            status: "OK",
+            pages: existingDoc.pages ?? undefined,
+            note: "reused",
+          });
+          continue;
+        }
+        const r = await downloadAndExtract(link, session);
+        await upsertSourceDoc(runId, {
+          type: link.type,
+          name: link.name,
+          sourceUrl: link.url,
+          fetchedVia: r.via,
+          fetchStatus: r.status,
+          extractedText: r.text ?? null,
+          pages: r.pages ?? null,
+          note: r.note ?? null,
+        });
         summary.tier2.push({
           name: link.name,
           type: link.type,
           category: link.category,
-          via: existingDoc.fetchedVia,
-          status: "OK",
-          pages: existingDoc.pages ?? undefined,
-          note: "reused",
+          via: r.via,
+          status: r.status,
+          pages: r.pages,
+          note: r.note,
         });
-        continue;
+      } catch (e) {
+        const note = `persist error: ${(e as Error).message}`.slice(0, 300);
+        // best-effort: record the failure (without the offending payload)
+        await upsertSourceDoc(runId, {
+          type: link.type,
+          name: link.name,
+          sourceUrl: link.url,
+          fetchedVia: "SCREENER",
+          fetchStatus: "FAILED",
+          note,
+        }).catch(() => {});
+        summary.tier2.push({
+          name: link.name,
+          type: link.type,
+          category: link.category,
+          via: "SCREENER",
+          status: "FAILED",
+          note,
+        });
       }
-      const r = await downloadAndExtract(link, session);
-      await upsertSourceDoc(runId, {
-        type: link.type,
-        name: link.name,
-        sourceUrl: link.url,
-        fetchedVia: r.via,
-        fetchStatus: r.status,
-        extractedText: r.text ?? null,
-        pages: r.pages ?? null,
-        note: r.note ?? null,
-      });
-      summary.tier2.push({
-        name: link.name,
-        type: link.type,
-        category: link.category,
-        via: r.via,
-        status: r.status,
-        pages: r.pages,
-        note: r.note,
-      });
     }
   } catch (e) {
     summary.tier1.note = `${summary.tier1.note ? summary.tier1.note + "; " : ""}harvest error: ${(e as Error).message}`;
