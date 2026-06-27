@@ -365,8 +365,10 @@ batch for a run — `runAnalysis(runId)` evaluates every item via
 (manual trigger; scheduling is a one-line `cron` add later).
 - **Resumable.** Processes only non-terminal items (PENDING / ERROR / DEFERRED);
   skips DONE / NEEDS_REVIEW — a re-run continues where it stopped.
-  Concurrency-limited (`p-limit`, `ANALYZE_CONCURRENCY` default 5) with
-  exponential backoff on 429s (`LLM_BACKOFF_MS`).
+  Concurrency-limited (`p-limit`, `ANALYZE_CONCURRENCY` default **2** — low
+  enough to stay under free-tier per-minute limits) with a long 429 backoff
+  (**5s → 15s → 30s**, base `LLM_BACKOFF_MS`) that rides out transient rate
+  limits within the run so the call succeeds instead of deferring.
 - **Quota-aware (the free-tier engine).** `lib/engine/quota.ts` holds per-provider
   daily caps (defaults; override via `LLM_DAILY_CAP` / `<PROVIDER>_DAILY_CAP`).
   Before each LLM call `callJSON` picks the role's provider, **falling back**

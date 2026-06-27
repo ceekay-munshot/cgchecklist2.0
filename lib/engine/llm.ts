@@ -3,7 +3,12 @@ import { recordProviderUsage } from "@/lib/usage";
 import type { CompleteOpts } from "@/lib/llm";
 import { QuotaExhaustedError, ROLE_CHAINS, hasQuota, markExhausted } from "./quota";
 
-const MAX_RATELIMIT_RETRIES = 2;
+// 429 backoff schedule. At the default base (5s) this rides out free-tier
+// per-minute windows as 5s -> 15s -> 30s before giving up and falling back to
+// the next provider. The base is read at call time so tests can shrink it
+// (LLM_BACKOFF_MS); the cumulative ~50s wait lets most transient rate limits
+// clear so the call SUCCEEDS within the run instead of being deferred.
+const BACKOFF_MULTIPLIERS = [1, 3, 6];
 
 function isRateLimit(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
@@ -15,15 +20,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
-  // Base delay is read at call time so tests can shrink it (LLM_BACKOFF_MS).
-  let delay = Number(process.env.LLM_BACKOFF_MS) || 2000;
+  const base = Number(process.env.LLM_BACKOFF_MS) || 5000;
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (e) {
-      if (!isRateLimit(e) || attempt >= MAX_RATELIMIT_RETRIES) throw e;
-      await sleep(delay);
-      delay *= 2;
+      if (!isRateLimit(e) || attempt >= BACKOFF_MULTIPLIERS.length) throw e;
+      await sleep(base * BACKOFF_MULTIPLIERS[attempt]);
     }
   }
 }

@@ -5,8 +5,12 @@ import { evaluateItem } from "@/lib/engine/evaluateItem";
 import { fromPrismaItem } from "@/lib/engine/types";
 import { QuotaExhaustedError } from "@/lib/engine/quota";
 
-/** Concurrency for per-item evaluation (free-tier friendly). Overridable via env. */
-const CONCURRENCY = Number(process.env.ANALYZE_CONCURRENCY) || 5;
+/**
+ * Concurrency for per-item evaluation. Default 2 keeps the request rate under
+ * free-tier per-minute limits (so 429s are rare and the long 429 backoff can
+ * ride out the few that occur, completing in a single run). Overridable via env.
+ */
+const CONCURRENCY = Number(process.env.ANALYZE_CONCURRENCY) || 2;
 
 /** Statuses that are terminal for a pass — skipped on re-run. */
 const TERMINAL = new Set(["DONE", "NEEDS_REVIEW"]);
