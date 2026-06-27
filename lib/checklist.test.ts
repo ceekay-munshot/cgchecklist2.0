@@ -59,14 +59,13 @@ describe.skipIf(!checklistPresent)("checklist data (requires data/checklist.json
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  // ids per the task spec; reconcile with the real file if they differ.
   it("classifies the five sample items by id", () => {
     const cases: Array<[string, ItemKind]> = [
-      ["A1-01", "NUMERIC"],
-      ["A3", "NUMERIC"],
-      ["A13", "QUALITATIVE"],
-      ["A2", "QUALITATIVE"],
-      ["A8", "NUMERIC"],
+      ["A1-01", "NUMERIC"], // Board independence — "% independent"
+      ["A3-02", "NUMERIC"], // Share pledging — "%"
+      ["A13-02", "QUALITATIVE"], // View on the CEO — "Text/Score"
+      ["A2-01", "QUALITATIVE"], // Audit Committee quality — "Yes/No + count"
+      ["A8-01", "NUMERIC"], // CFO vs PAT — "Ratio (cumulative)"
     ];
     for (const [id, expected] of cases) {
       const item = getItem(id);

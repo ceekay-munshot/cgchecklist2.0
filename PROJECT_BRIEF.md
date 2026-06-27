@@ -234,16 +234,12 @@ resumable, quota-aware design (ChecklistSection/ChecklistItem mirroring
 new status enum + counters + summaryJson; SourceDoc; resumable ItemResult;
 ProviderUsage) + fresh `init` migration; `SCREENER_*` env added.
 
-**Done (Phase 2b — checklist plumbing):** `lib/checklist.ts`
-(`getSections`/`getItems`/`getItem`/`itemKind`), idempotent `prisma/seed.mts`
-(upsert by id), and vitest tests. `itemKind` is verified on the five sample
-formats; the seed + loaders were verified end-to-end against a throwaway fixture.
-
-**Pending — drop in `data/checklist.json` (the real 106-item file):** then
-`npm run db:seed` loads 16 sections / 106 items, and the data-backed tests
-(`getItems().length === 106`, the five sample ids) activate automatically.
-Reconcile the five sample ids in `lib/checklist.test.ts` with the real file if
-they differ from `A1-01 / A3 / A13 / A2 / A8`.
+**Done (Phase 2b — checklist):** `data/checklist.json` (the real **Daksham CG
+Checklist**, 16 sections / 106 items) is committed and seeded. `lib/checklist.ts`
+(`getSections`/`getItems`/`getItem`/`itemKind`) + idempotent `prisma/seed.mts`
+load it (`npm run db:seed` → 16 sections / 106 items, re-runnable). vitest (6/6)
+covers `itemKind` on the five samples (A1-01, A3-02, A13-02, A2-01, A8-01), the
+106 / 16 counts, and id uniqueness.
 
 **Later phases:** `lib/ingest` (extract PDFs/filings), `lib/engine`
 (`evaluateItem`), `lib/orchestrate` (resumable `runAnalysis` + persistence +

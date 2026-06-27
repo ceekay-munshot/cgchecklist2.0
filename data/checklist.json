@@ -1,0 +1,1283 @@
+{
+  "title": "Daksham Corporate Governance Checklist",
+  "meta": {
+    "framework": "SEBI LODR / Ind AS (Indian listed companies)",
+    "scoring": false,
+    "flags": [
+      "green",
+      "red",
+      "neutral",
+      "not_available"
+    ],
+    "source_priority": [
+      "annual_report",
+      "earnings_or_financial_pdf",
+      "exchange_announcement",
+      "web_research"
+    ]
+  },
+  "sections": [
+    {
+      "code": "A1",
+      "name": "Board Structure & Composition",
+      "items": [
+        {
+          "id": "A1-01",
+          "item": "Board size & independence ratio",
+          "description": "Independent-director share vs LODR minimum",
+          "output_format": "% independent",
+          "green_flag": "≥50% independent; board 8–12",
+          "red_flag": "<50% / only meets bare minimum",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-02",
+          "item": "Chairman–MD separation",
+          "description": "Roles split, chairman non-promoter",
+          "output_format": "Yes/No",
+          "green_flag": "Separated, chairman non-promoter",
+          "red_flag": "Same person or promoter holds both",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-03",
+          "item": "Non-executive chairman",
+          "description": "Chairman has no executive role",
+          "output_format": "Yes/No",
+          "green_flag": "Non-executive (ideally independent)",
+          "red_flag": "Executive promoter-chairman",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-04",
+          "item": "True independence of IDs",
+          "description": "Tenure, ties, fee dependence",
+          "output_format": "Score (1–5)",
+          "green_flag": "<2 terms, no ties, low fee dependence",
+          "red_flag": ">10-yr tenure / ex-employees / material ties",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-05",
+          "item": "Director reputation",
+          "description": "Standing across other boards",
+          "output_format": "Text/Score",
+          "green_flag": "Clean, well-regarded",
+          "red_flag": "Linked to past frauds/defaults",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-06",
+          "item": "Overboarding",
+          "description": "Directorships held elsewhere",
+          "output_format": "Count",
+          "green_flag": "≤7 listed boards (≤3 if also ED)",
+          "red_flag": "At/over statutory cap or >7–8 boards",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-07",
+          "item": "Attendance records",
+          "description": "Board & committee attendance",
+          "output_format": "%",
+          "green_flag": "≥75% all directors",
+          "red_flag": "Any <50% / repeated AC absence",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-08",
+          "item": "Skills/competence matrix",
+          "description": "Maps to strategy, gaps filled",
+          "output_format": "Yes/No",
+          "green_flag": "Specific, gaps covered",
+          "red_flag": "Boilerplate / visible skill gaps",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-09",
+          "item": "ID resignation pattern",
+          "description": "Mid-term independent exits",
+          "output_format": "Count/Text",
+          "green_flag": "None; orderly with clear reasons",
+          "red_flag": "≥2 mid-term exits/2yrs or vague \"personal reasons\"",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A1-10",
+          "item": "Reappointment/removal patterns",
+          "description": "Merit vs rubber-stamp",
+          "output_format": "Text",
+          "green_flag": "Contested, merit-based",
+          "red_flag": "Captive renewals, permanent invitees",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A2",
+      "name": "Board Committees",
+      "items": [
+        {
+          "id": "A2-01",
+          "item": "Audit Committee quality",
+          "description": "Independence, literacy, frequency",
+          "output_format": "Yes/No + count",
+          "green_flag": "100% independent, ≥4 meetings, ≥75% attendance",
+          "red_flag": "Non-independent members / <4 meetings",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A2-02",
+          "item": "NRC/Risk/Stakeholder committees",
+          "description": "Constituted & active",
+          "output_format": "Yes/No",
+          "green_flag": "All present and active",
+          "red_flag": "Missing or inactive",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A2-03",
+          "item": "CSR committee & spend",
+          "description": "Governance and deployment",
+          "output_format": "%",
+          "green_flag": "≥2% mandate spent properly",
+          "red_flag": "Shortfall unspent without reason",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A2-04",
+          "item": "Substance vs paper",
+          "description": "Meaningful meeting cadence",
+          "output_format": "Count",
+          "green_flag": "Regular, substantive agendas",
+          "red_flag": "Bare once-a-year meetings",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A3",
+      "name": "Promoter & Ownership Structure",
+      "items": [
+        {
+          "id": "A3-01",
+          "item": "Promoter holding trend",
+          "description": "Direction over 8–12 quarters",
+          "output_format": "% + trend",
+          "green_flag": "Stable/rising, >50%",
+          "red_flag": "Steady decline / sharp drops / <26%",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A3-02",
+          "item": "Share pledging/encumbrance",
+          "description": "Pledged % of promoter stake",
+          "output_format": "%",
+          "green_flag": "0% (or <10%)",
+          "red_flag": ">25% or rising",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A3-03",
+          "item": "Cross-holdings & pyramiding",
+          "description": "Layers and circularity",
+          "output_format": "Text",
+          "green_flag": "Simple, direct",
+          "red_flag": "Multi-layer pyramids / circular",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A3-04",
+          "item": "Differential voting rights",
+          "description": "Vote-per-share equality",
+          "output_format": "Yes/No",
+          "green_flag": "One-share-one-vote",
+          "red_flag": "Superior votes to promoters",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A3-05",
+          "item": "Cheap insider equity",
+          "description": "Preferential/warrants to promoters",
+          "output_format": "Count/Text",
+          "green_flag": "None / at-market",
+          "red_flag": "Repeated discounted insider issues",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A3-06",
+          "item": "Free float level",
+          "description": "Public float depth",
+          "output_format": "%",
+          "green_flag": "≥35–40%",
+          "red_flag": "<15–25% (near MPS floor)",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A3-07",
+          "item": "Marquee investor entry/exit",
+          "description": "Smart-money behaviour",
+          "output_format": "Text",
+          "green_flag": "Reputed investors entering/holding",
+          "red_flag": "Quality holders exiting",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A4",
+      "name": "Auditor & Audit Quality",
+      "items": [
+        {
+          "id": "A4-01",
+          "item": "Auditor identity & rotation",
+          "description": "Quality + rotation compliance",
+          "output_format": "Yes/No",
+          "green_flag": "Reputed firm, compliant",
+          "red_flag": "Obscure firm / rotation avoidance",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-02",
+          "item": "Audit firm calibre",
+          "description": "Tier of statutory auditor",
+          "output_format": "Categorical",
+          "green_flag": "Big-4 / top national",
+          "red_flag": "Small local firm vs company size",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-03",
+          "item": "Subsidiary auditor calibre",
+          "description": "Quality of sub auditors",
+          "output_format": "Categorical",
+          "green_flag": "Comparable quality",
+          "red_flag": "Tiny local auditors for material subs",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-04",
+          "item": "Auditor resignation & reasons",
+          "description": "Mid-term exits",
+          "output_format": "Count/Text",
+          "green_flag": "None / orderly handover",
+          "red_flag": "Exit citing info-access/disagreement",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-05",
+          "item": "Qualifications/emphasis of matter",
+          "description": "Audit opinion cleanliness",
+          "output_format": "Yes/No",
+          "green_flag": "Clean opinion",
+          "red_flag": "Qualified / going-concern / multiple EoMs",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-06",
+          "item": "Audit vs non-audit fees",
+          "description": "Independence indicator",
+          "output_format": "Ratio",
+          "green_flag": "Non-audit <25–50% of audit",
+          "red_flag": "Non-audit > audit fees",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-07",
+          "item": "Auditor remuneration level",
+          "description": "Fee vs size/peers",
+          "output_format": "Text",
+          "green_flag": "In line with size",
+          "red_flag": "Abnormally low (scope) or high",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-08",
+          "item": "Internal & secretarial audit",
+          "description": "MR-3 + IA quality",
+          "output_format": "Yes/No",
+          "green_flag": "Clean MR-3, robust IA",
+          "red_flag": "MR-3 qualifications / weak IA",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A4-09",
+          "item": "IFC adequacy",
+          "description": "Internal financial controls",
+          "output_format": "Yes/No",
+          "green_flag": "Adequate & effective",
+          "red_flag": "Adverse IFC remarks",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A5",
+      "name": "Related-Party Transactions",
+      "items": [
+        {
+          "id": "A5-01",
+          "item": "RPTs as % of revenue/PAT",
+          "description": "Scale of insider flows",
+          "output_format": "%",
+          "green_flag": "Low & stable (<5% rev)",
+          "red_flag": "Large/rising (>15–20% rev)",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A5-02",
+          "item": "Royalty/brand/tech fees",
+          "description": "Promoter extraction via royalty",
+          "output_format": "% of sales",
+          "green_flag": "Nil or <1%, stable",
+          "red_flag": ">2–3% sales or rising > sales",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A5-03",
+          "item": "Loans/ICDs/guarantees to group",
+          "description": "Capital leaving listco",
+          "output_format": "% net worth",
+          "green_flag": "Nil/minimal",
+          "red_flag": "Material loans/guarantees to promoters",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A5-04",
+          "item": "Promoter-vendor transactions",
+          "description": "Margin leakage via captives",
+          "output_format": "%",
+          "green_flag": "Minimal / verified arm's length",
+          "red_flag": "Significant promoter routing",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A5-05",
+          "item": "Arm's-length assertion",
+          "description": "Benchmarking quality",
+          "output_format": "Yes/No",
+          "green_flag": "Independently benchmarked",
+          "red_flag": "Blanket claim, thin disclosure",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A5-06",
+          "item": "Minority dissent on RPTs",
+          "description": "Public-institution opposition",
+          "output_format": "% against",
+          "green_flag": "<10% against",
+          "red_flag": ">20% against / failed resolutions",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A6",
+      "name": "Remuneration",
+      "items": [
+        {
+          "id": "A6-01",
+          "item": "Pay vs Sec 197 & profit",
+          "description": "Remuneration vs profit cap",
+          "output_format": "% of net profit",
+          "green_flag": "≤5% single / ≤10% all, within limits",
+          "red_flag": "Exceeds Sec 197 limits",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A6-02",
+          "item": "Promoter-exec pay vs peers",
+          "description": "Benchmarked, performance-linked",
+          "output_format": "Text/%",
+          "green_flag": "In line, performance-linked",
+          "red_flag": "Above peers, rising as profit falls",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A6-03",
+          "item": "Pay-for-performance linkage",
+          "description": "Variable vs fixed",
+          "output_format": "Yes/No",
+          "green_flag": "Variable tied to metrics",
+          "red_flag": "Largely fixed/discretionary",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A6-04",
+          "item": "ESOP/RSU dilution & pricing",
+          "description": "Dilution and pricing",
+          "output_format": "% annual dilution",
+          "green_flag": "<1–2%, market-priced",
+          "red_flag": "Heavy/deep-discount, promoter-concentrated",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A6-05",
+          "item": "CEO-to-median ratio & severance",
+          "description": "Pay equity & parachutes",
+          "output_format": "Ratio",
+          "green_flag": "Reasonable vs sector",
+          "red_flag": "Extreme (>100–200x) unjustified",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A7",
+      "name": "Disclosure, Transparency & Candor",
+      "items": [
+        {
+          "id": "A7-01",
+          "item": "Timeliness/completeness",
+          "description": "Filing discipline",
+          "output_format": "Yes/No",
+          "green_flag": "Timely, no fines",
+          "red_flag": "Repeated delays / Reg 30 fines",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7-02",
+          "item": "Restatement frequency",
+          "description": "Reliability of numbers",
+          "output_format": "Count",
+          "green_flag": "None",
+          "red_flag": "≥1 material restatement",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7-03",
+          "item": "Segment granularity",
+          "description": "Segment transparency",
+          "output_format": "Yes/No",
+          "green_flag": "Granular per Ind AS 108",
+          "red_flag": "Single-segment masking",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7-04",
+          "item": "Concall candor & guidance",
+          "description": "Engagement & honesty",
+          "output_format": "Text",
+          "green_flag": "Regular, transparent, hits guidance",
+          "red_flag": "No calls / evasive / misses",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7-05",
+          "item": "MD&A consistency",
+          "description": "Narrative stability",
+          "output_format": "Text",
+          "green_flag": "Consistent, balanced",
+          "red_flag": "Shifting / promotional",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A7a",
+      "name": "Contingent Liabilities & Commitments",
+      "items": [
+        {
+          "id": "A7a-01",
+          "item": "CL as % of net worth",
+          "description": "Solvency-scaled exposure",
+          "output_format": "%",
+          "green_flag": "<10–25%",
+          "red_flag": ">50–100%",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-02",
+          "item": "CL trend over time",
+          "description": "Build-up direction",
+          "output_format": "Trend",
+          "green_flag": "Stable/declining",
+          "red_flag": "Rising sharply",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-03",
+          "item": "Direct tax disputes",
+          "description": "Disputed income-tax demands",
+          "output_format": "₹ / % NW",
+          "green_flag": "Small, mostly winnable",
+          "red_flag": "Large / repeated losses",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-04",
+          "item": "Indirect tax disputes",
+          "description": "Excise/ST/customs/GST demands",
+          "output_format": "₹",
+          "green_flag": "Minor",
+          "red_flag": "Large legacy demands",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-05",
+          "item": "Litigation / claims not acknowledged",
+          "description": "Disputed legal claims",
+          "output_format": "₹",
+          "green_flag": "Immaterial",
+          "red_flag": "Material, adverse-probable",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-06",
+          "item": "Corporate guarantees given",
+          "description": "Off-B/S group exposure",
+          "output_format": "% net worth",
+          "green_flag": "Nil/minimal",
+          "red_flag": "Large guarantees to group/3rd party",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-07",
+          "item": "Bank guarantees & LCs",
+          "description": "Outstanding BGs/LCs",
+          "output_format": "₹",
+          "green_flag": "Normal-course, covered",
+          "red_flag": "Large vs balance sheet",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-08",
+          "item": "Capital commitments",
+          "description": "Future capex lock-in",
+          "output_format": "₹",
+          "green_flag": "Funded/planned",
+          "red_flag": "Large unfunded vs cash flow",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-09",
+          "item": "Bills discounted with recourse",
+          "description": "Recourse receivables financing",
+          "output_format": "₹",
+          "green_flag": "Nil/small",
+          "red_flag": "Material",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-10",
+          "item": "Statutory dues disputes",
+          "description": "PF/ESI/cess disputes",
+          "output_format": "₹",
+          "green_flag": "Minor",
+          "red_flag": "Material",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-11",
+          "item": "Regulatory/penalty demands",
+          "description": "SEBI/CCI/environmental penalties",
+          "output_format": "Yes/No",
+          "green_flag": "None",
+          "red_flag": "Material penalties contested",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-12",
+          "item": "Subsidiary/JV/associate CLs",
+          "description": "Consol-only exposure",
+          "output_format": "₹",
+          "green_flag": "Minimal",
+          "red_flag": "Large on consolidation",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-13",
+          "item": "Movement (add/reversal/crystallized)",
+          "description": "Direction of resolution",
+          "output_format": "Trend",
+          "green_flag": "Reversed/favourable",
+          "red_flag": "Rising additions / losses crystallizing",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-14",
+          "item": "Provided vs only disclosed",
+          "description": "Provisioning honesty",
+          "output_format": "Yes/No",
+          "green_flag": "Likely outflows provisioned",
+          "red_flag": "Probable losses only footnoted",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A7a-15",
+          "item": "Unhedged forex/derivative",
+          "description": "Open market exposure",
+          "output_format": "%",
+          "green_flag": "Largely hedged",
+          "red_flag": "Large open exposure",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A8",
+      "name": "Accounting Quality / Forensic Flags",
+      "items": [
+        {
+          "id": "A8-01",
+          "item": "CFO vs PAT (accruals)",
+          "description": "Cash backing of profit",
+          "output_format": "Ratio (cumulative)",
+          "green_flag": "≥0.8–1.0",
+          "red_flag": "<0.5 / persistent gap",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-02",
+          "item": "Working-capital days creep",
+          "description": "WC vs sales",
+          "output_format": "Trend (days)",
+          "green_flag": "Stable/improving",
+          "red_flag": "Rising faster than sales",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-03",
+          "item": "Receivables >6 months ageing",
+          "description": "Old receivables share",
+          "output_format": "% of receivables",
+          "green_flag": "<5–10%",
+          "red_flag": ">20–25%",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-04",
+          "item": "Expense capitalization",
+          "description": "Aggressiveness",
+          "output_format": "Text",
+          "green_flag": "Conservative/expensed",
+          "red_flag": "Aggressive interest/R&D capitalization",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-05",
+          "item": "Recurring exceptionals & other income",
+          "description": "Quality of PBT",
+          "output_format": "% of PBT",
+          "green_flag": "Rare, small",
+          "red_flag": "Frequent, large % of PBT",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-06",
+          "item": "Goodwill build-up & impairment",
+          "description": "M&A value test",
+          "output_format": "Text",
+          "green_flag": "Low goodwill, no impairments",
+          "red_flag": "Large goodwill, serial impairments",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-07",
+          "item": "Policy/estimate/year-end changes",
+          "description": "Earnings-management lever",
+          "output_format": "Count",
+          "green_flag": "Stable",
+          "red_flag": "Frequent profit-boosting changes",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-08",
+          "item": "Depreciation rate consistency",
+          "description": "Profit-management lever",
+          "output_format": "Text",
+          "green_flag": "Stable, conservative",
+          "red_flag": "Declining rates / extended lives",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-09",
+          "item": "Provisioning adequacy",
+          "description": "Buffer honesty",
+          "output_format": "Text",
+          "green_flag": "Conservative",
+          "red_flag": "Under-provisioned / write-backs",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-10",
+          "item": "Effective tax-rate anomaly",
+          "description": "Tax vs statutory",
+          "output_format": "%",
+          "green_flag": "Near statutory (~25%)",
+          "red_flag": "Persistent unexplained deviation",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-11",
+          "item": "Cash EPS vs accounting EPS",
+          "description": "Earnings quality",
+          "output_format": "Ratio",
+          "green_flag": "Close",
+          "red_flag": "Wide gap",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-12",
+          "item": "CFO/EBITDA conversion",
+          "description": "Operating-cash conversion",
+          "output_format": "Ratio",
+          "green_flag": "≥0.6–0.7",
+          "red_flag": "<0.4",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A8-13",
+          "item": "Consolidation opacity",
+          "description": "Coverage completeness",
+          "output_format": "Text",
+          "green_flag": "Full, clear consolidation",
+          "red_flag": "Unconsolidated material entities",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A9",
+      "name": "Regulatory, Legal & Integrity",
+      "items": [
+        {
+          "id": "A9-01",
+          "item": "SEBI actions/consent orders",
+          "description": "Conduct record",
+          "output_format": "Count",
+          "green_flag": "None",
+          "red_flag": "Orders/penalties/insider-trading cases",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A9-02",
+          "item": "NCLT/CCI/ED/CBI/SFIO & forensic",
+          "description": "Serious investigations",
+          "output_format": "Yes/No",
+          "green_flag": "None",
+          "red_flag": "Active serious investigation",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A9-03",
+          "item": "Whistleblower/vigil mechanism",
+          "description": "Internal culture",
+          "output_format": "Text",
+          "green_flag": "Functioning, disclosed",
+          "red_flag": "Absent / complaints suppressed",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A9-04",
+          "item": "Promoter track record elsewhere",
+          "description": "Cross-entity behaviour",
+          "output_format": "Text",
+          "green_flag": "Clean",
+          "red_flag": "Past defaults/frauds elsewhere",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A9-05",
+          "item": "Rating downgrades/withdrawals",
+          "description": "Credit trajectory",
+          "output_format": "Trend",
+          "green_flag": "Stable/upgrades",
+          "red_flag": "Downgrades / withdrawals / default",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A10",
+      "name": "Minority-Shareholder Treatment",
+      "items": [
+        {
+          "id": "A10-01",
+          "item": "Dividend policy consistency",
+          "description": "Payout discipline",
+          "output_format": "Text/%",
+          "green_flag": "Consistent/growing payout",
+          "red_flag": "Erratic / nil despite cash",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A10-02",
+          "item": "Swap ratios in group mergers",
+          "description": "Valuation fairness",
+          "output_format": "Text",
+          "green_flag": "Independent, fair",
+          "red_flag": "Favours promoter entities",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A10-03",
+          "item": "Institutional voting patterns",
+          "description": "Shareholder pushback",
+          "output_format": "% against",
+          "green_flag": "Low dissent",
+          "red_flag": "High against / withdrawn resolutions",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A10-04",
+          "item": "Rights/preferential pricing fairness",
+          "description": "Issue pricing",
+          "output_format": "Text",
+          "green_flag": "Fair/market-priced",
+          "red_flag": "Discounted to insiders",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A10-05",
+          "item": "Buyback vs dividend choice",
+          "description": "Who benefits",
+          "output_format": "Text",
+          "green_flag": "Returns to all efficiently",
+          "red_flag": "Structured to favour promoters",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A11",
+      "name": "Group & Subsidiary Structure",
+      "items": [
+        {
+          "id": "A11-01",
+          "item": "Holding-structure complexity",
+          "description": "Layers and clarity",
+          "output_format": "Count of layers",
+          "green_flag": "≤2–3, simple",
+          "red_flag": "Many layers / opaque",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A11-02",
+          "item": "Trapped/round-tripped cash",
+          "description": "Where cash sits",
+          "output_format": "Text",
+          "green_flag": "Cash at listco",
+          "red_flag": "Trapped/cycled in subs",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A11-03",
+          "item": "Inter-corporate loans",
+          "description": "Group lending",
+          "output_format": "₹",
+          "green_flag": "Minimal",
+          "red_flag": "Large group lending",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A11-04",
+          "item": "Listed-vs-unlisted sub leakage",
+          "description": "Value location",
+          "output_format": "Text",
+          "green_flag": "Value at listed entity",
+          "red_flag": "Value parked unlisted",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A12",
+      "name": "Employee / Human Capital",
+      "items": [
+        {
+          "id": "A12-01",
+          "item": "Employee attrition",
+          "description": "Churn vs industry",
+          "output_format": "%",
+          "green_flag": "At/below industry",
+          "red_flag": "Well above / rising",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A12-02",
+          "item": "Remuneration vs industry",
+          "description": "Pay competitiveness",
+          "output_format": "Text",
+          "green_flag": "Competitive",
+          "red_flag": "Well below (flight) or excessive",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A12-03",
+          "item": "ESOP pool existence",
+          "description": "Retention/alignment tool",
+          "output_format": "%",
+          "green_flag": "Reasonable broad-based pool",
+          "red_flag": "None / promoter-concentrated",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A13",
+      "name": "Management & Promoter Quality (Qualitative)",
+      "items": [
+        {
+          "id": "A13-01",
+          "item": "Professional CEO vs promoter-run",
+          "description": "Management depth",
+          "output_format": "Categorical",
+          "green_flag": "Capable professional / strong promoter",
+          "red_flag": "Weak promoter-dependence, no bench",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-02",
+          "item": "View on the CEO",
+          "description": "Track record & credibility",
+          "output_format": "Text/Score",
+          "green_flag": "Strong allocation track record",
+          "red_flag": "Poor allocation / credibility",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-03",
+          "item": "Promoter vintage & involvement",
+          "description": "Engagement & history",
+          "output_format": "Text",
+          "green_flag": "Long, engaged",
+          "red_flag": "Absentee / serial promoter",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-04",
+          "item": "Top-management team vintage",
+          "description": "Stability at top",
+          "output_format": "Years",
+          "green_flag": "Long-tenured, stable",
+          "red_flag": "High churn",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-05",
+          "item": "Second-level team quality",
+          "description": "Succession depth",
+          "output_format": "Text",
+          "green_flag": "Deep bench",
+          "red_flag": "Thin / key-person risk",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-06",
+          "item": "Family dynamics / disputes",
+          "description": "Stability risk",
+          "output_format": "Yes/No",
+          "green_flag": "No disputes, clear succession",
+          "red_flag": "Public family feud",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-07",
+          "item": "Promoter's other material businesses",
+          "description": "Attention/conflict risk",
+          "output_format": "Text",
+          "green_flag": "Focused",
+          "red_flag": "Many competing/private ventures",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-08",
+          "item": "Sensitive government dealings",
+          "description": "Discretionary dependence",
+          "output_format": "Text",
+          "green_flag": "Limited/transparent",
+          "red_flag": "Heavy discretionary govt reliance",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A13-09",
+          "item": "Political connect",
+          "description": "Political dependence",
+          "output_format": "Text",
+          "green_flag": "None/neutral",
+          "red_flag": "Heavy political dependence",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A14",
+      "name": "Leverage & Banking Relationships",
+      "items": [
+        {
+          "id": "A14-01",
+          "item": "Leverage level",
+          "description": "Gearing (sector-adjusted)",
+          "output_format": "D/E ratio",
+          "green_flag": "<0.5–1.0",
+          "red_flag": ">2 / rising",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A14-02",
+          "item": "Debt & advances level",
+          "description": "Borrowings + advances given",
+          "output_format": "Text",
+          "green_flag": "Modest",
+          "red_flag": "High debt + large advances out",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A14-03",
+          "item": "Quality of bankers",
+          "description": "Lender tier",
+          "output_format": "Categorical",
+          "green_flag": "Top private/PSU/MNC banks",
+          "red_flag": "Only marginal lenders",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    },
+    {
+      "code": "A15",
+      "name": "Stock & Market Characteristics",
+      "items": [
+        {
+          "id": "A15-01",
+          "item": "Stock volatility",
+          "description": "Price behaviour",
+          "output_format": "Text",
+          "green_flag": "In line with market",
+          "red_flag": "Abnormal/operator-like moves",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A15-02",
+          "item": "Volume & liquidity",
+          "description": "Tradeability",
+          "output_format": "Text",
+          "green_flag": "Adequate daily liquidity",
+          "red_flag": "Very thin / illiquid",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        },
+        {
+          "id": "A15-03",
+          "item": "Research coverage",
+          "description": "External scrutiny",
+          "output_format": "Count",
+          "green_flag": "Multiple reputed houses",
+          "red_flag": "No / captive coverage",
+          "source_hint": "",
+          "is_non_negotiable": false,
+          "threshold_logic": ""
+        }
+      ]
+    }
+  ]
+}
