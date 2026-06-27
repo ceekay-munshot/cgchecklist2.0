@@ -130,11 +130,15 @@ lib/
     flag.ts              # assignFlag — numeric bands (deterministic) + qualitative judge + NN gate
     evaluateItem.ts      # getEvidence → analyzeItem → assignFlag → upsert ItemResult
     llm.ts               # role-routed completeJSON + ProviderUsage tracking
-  orchestrate/           # end-to-end pipeline (STUB)
+  orchestrate/           # resumable, quota-aware batch over a run (tested)
+    run.ts               # runAnalysis(runId) + drainQueue + summarize + prune
+    index.ts
+    quota.ts             # (in lib/engine) per-provider daily caps + fallback gating
   export/                # Excel / PDF / PPTX writers (STUB)
 data/                    # checklist.json (16 sections / 106 items)
 prisma/                  # schema.prisma + migrations/ + seed.mts
-scripts/                 # harvest.ts (npm run harvest), analyze-validate.ts (npm run analyze)
+scripts/                 # harvest.ts (npm run harvest), analyze-validate.ts (npm run analyze),
+                         #   analyze-run.ts (npm run analyze-run — full 106-item batch)
 ```
 
 ---
@@ -208,9 +212,14 @@ search API, so its `search()` is always `not_available`.)
   stored, later identical ones become lightweight OK markers).
 - **`ItemResult`** — resumable per-item state, unique `(runId, itemId)`:
   `status`, `flag?`, `verdict?`, `value?`, `evidenceQuote?`, `sourceDocId?`,
-  `confidence?`, `isNonNegotiable`, `gatePass?`, `providerUsed?`, `attempts`,
-  `lastError?`, `processedAt?`, `analystOverride`, `overrideNote?`.
+  `sourcePage?`, `sourceUrl?` (self-contained citation that survives text
+  pruning), `confidence?`, `isNonNegotiable`, `gatePass?`, `providerUsed?`,
+  `attempts`, `lastError?`, `processedAt?`, `analystOverride`, `overrideNote?`.
   **No score field.**
+  - `AnalysisRun.summaryJson` (set on completion) = per-section flag rollups
+    (green/red/neutral/NA), `totalReds`, and the **non-negotiable gate**
+    (`gatePass=false` if ANY non-negotiable item is RED). On `DONE` the heavy
+    `SourceDoc.extractedText` is pruned (kept while in-progress / PARTIAL).
 - **`ProviderUsage`** — free-tier quota, unique `(provider, date)`: `requests`,
   `tokens`.
 
@@ -252,6 +261,7 @@ npm run db:seed      # prisma db seed (loads data/checklist.json)
 npm test             # vitest run
 npm run harvest -- <TICKER> [NSE|BSE]   # Phase-3 Screener harvest of one company
 npm run analyze -- <TICKER>             # Phase-4 analysis core on a company's latest run
+npm run analyze-run -- <TICKER|runId>   # Phase-5 FULL 106-item resumable batch (no arg = drain queue)
 ```
 
 Pages: `/` (dashboard), `/health` (provider statuses), `/api/health` (JSON).
@@ -349,9 +359,33 @@ Key design choices (record + obey):
   (status DONE / NEEDS_REVIEW / ERROR, `attempts++`), so the later orchestrator
   resumes per-item.
 
-**Later phases:** `lib/orchestrate` (resumable `runAnalysis` over ALL 106 items
-+ daily free-tier quota gating), `lib/export` (xlsx/pdf/pptx). (`lib/ingest` is
-now largely covered by `lib/harvest`.)
+**Done (Phase 5 — orchestration):** `lib/orchestrate` runs the FULL 106-item
+batch for a run — `runAnalysis(runId)` evaluates every item via
+`evaluateItem` (Phase 4). Validated on real TCS data via `analyze-run.yml`
+(manual trigger; scheduling is a one-line `cron` add later).
+- **Resumable.** Processes only non-terminal items (PENDING / ERROR / DEFERRED);
+  skips DONE / NEEDS_REVIEW — a re-run continues where it stopped.
+  Concurrency-limited (`p-limit`, `ANALYZE_CONCURRENCY` default 5) with
+  exponential backoff on 429s (`LLM_BACKOFF_MS`).
+- **Quota-aware (the free-tier engine).** `lib/engine/quota.ts` holds per-provider
+  daily caps (defaults; override via `LLM_DAILY_CAP` / `<PROVIDER>_DAILY_CAP`).
+  Before each LLM call `callJSON` picks the role's provider, **falling back**
+  through the chain to any provider under its cap; a persistent 429 marks a
+  provider exhausted. If NO provider can serve it → `QuotaExhaustedError` → the
+  item is **DEFERRED**, the run goes **PARTIAL**, and the next run resumes.
+  **Tier-1 zero-LLM numeric items always complete** regardless of quota.
+- **Completion + storage thrift.** When no items remain pending/error/deferred:
+  compute `summaryJson` (section rollups + totalReds + non-negotiable gate), set
+  `status=DONE`, update counters, then **prune** the heavy `SourceDoc.extractedText`
+  — keeping structuredData, the ItemResults (evidence quote + source ref + page),
+  and SourceDoc metadata incl. `sourceUrl` (re-fetchable on demand). Text is kept
+  while a run is in-progress / PARTIAL across days.
+- **Queue drainer.** `drainQueue()` processes eligible runs (HARVESTED / PARTIAL)
+  in order — the on-demand queue and the future daily-schedule entry point.
+
+**Later phases:** `lib/export` (xlsx/pdf/pptx); a **daily schedule** for
+`analyze-run` (drain the queue under quota). (`lib/ingest` is now largely
+covered by `lib/harvest`.)
 
 ---
 
@@ -409,6 +443,21 @@ from the annual report), `A4-01` (auditor identity — qualitative from the AR),
 (`results.json` + `summary.md`): per item → value, flag, verdict, evidence quote,
 source (`sourceDocId`/page or URL), provider used, confidence. LLM calls are
 tracked in `ProviderUsage`. It needs no Playwright (it reads stored text).
+
+### `analyze-run.yml` — full 106-item batch (manual only)
+
+`/.github/workflows/analyze-run.yml` runs the **full resumable, quota-aware
+batch** for a ticker against the persistent Neon DB. Actions → **analyze-run** →
+Run workflow → **ticker** (default `TCS`, or an `AnalysisRun` id). It
+`migrate deploy`s + seeds, runs all 106 items, and uploads
+**`analyze-run-<ticker>`** (`results.json` grouped by section + `summary.md`):
+per item flag/value/verdict/source, the per-section rollups, and the
+**non-negotiable gate**. Re-running **resumes** (DONE items skipped); under an
+exhausted quota it ends **PARTIAL** and the next run continues. Force a low cap
+to exercise the PARTIAL→resume path by setting `LLM_DAILY_CAP` in the job env.
+**Required secrets:** `DATABASE_URL` + the LLM keys (`GROQ_API_KEY`,
+`MISTRAL_API_KEY`, `GEMINI_API_KEY`, optionally `NVIDIA_API_KEY`). It's
+`workflow_dispatch`-only; a daily `cron:` is a one-line add (noted in the file).
 
 ---
 

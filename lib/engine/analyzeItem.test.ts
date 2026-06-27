@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
-vi.mock("@/lib/usage", () => ({ recordProviderUsage: vi.fn() }));
+vi.mock("@/lib/usage", () => ({
+  recordProviderUsage: vi.fn(),
+  getProviderUsage: vi.fn(async () => ({ requests: 0 })),
+}));
 vi.mock("@/lib/llm", () => {
-  const mk = (id: string) => ({ id, complete: vi.fn(), completeJSON: vi.fn() });
+  const mk = (id: string) => ({ id, complete: vi.fn(), completeJSON: vi.fn(), isConfigured: () => true });
   return {
     llm: { reasoning: mk("mistral"), bulkClassify: mk("groq"), longContext: mk("gemini"), fallback: mk("nvidia") },
   };
 });
 
 import { analyzeItem } from "./analyzeItem";
+import { resetQuotaState } from "./quota";
 import { llm } from "@/lib/llm";
 import type { EngineItem, Evidence } from "./types";
 
@@ -28,7 +32,10 @@ function item(p: Partial<EngineItem> & { id: string }): EngineItem {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetQuotaState();
+});
 
 describe("analyzeItem", () => {
   it("returns 'not available' without an LLM call when evidence is missing", async () => {
@@ -69,6 +76,32 @@ describe("analyzeItem", () => {
     expect(a.value).toContain("72.30%");
     expect(a.value).toContain("stable");
     expect(a.providerUsed).toBe("deterministic");
+  });
+
+  it("labels a near-flat percentage series 'stable' (within tolerance)", async () => {
+    const ev: Evidence = {
+      status: "found",
+      from: "screener",
+      kind: "NUMERIC",
+      structured: { "Promoter holding %": "71.77%" },
+      series: { label: "Promoter holding %", periods: ["a", "b"], values: ["72.30%", "71.77%"] },
+      citation: { sourceDocId: "sd1", docType: "SCREENER_PAGE" },
+    };
+    const a = await analyzeItem(item({ id: "A3-01", outputFormat: "% + trend" }), ev);
+    expect(a.value).toContain("stable"); // 0.53pp drift is NOT "declining"
+  });
+
+  it("labels a clearly declining series 'declining'", async () => {
+    const ev: Evidence = {
+      status: "found",
+      from: "screener",
+      kind: "NUMERIC",
+      structured: { "Promoter holding %": "60.00%" },
+      series: { label: "Promoter holding %", periods: ["a", "b"], values: ["72.00%", "60.00%"] },
+      citation: { sourceDocId: "sd1", docType: "SCREENER_PAGE" },
+    };
+    const a = await analyzeItem(item({ id: "A3-01", outputFormat: "% + trend" }), ev);
+    expect(a.value).toContain("declining");
   });
 
   it("extracts board independence as a numeric value via Groq", async () => {

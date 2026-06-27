@@ -1,0 +1,163 @@
+/**
+ * Run the FULL 106-item, resumable, quota-aware analysis for a company (or drain
+ * the queue), then write a report artifact grouped by section + the summaryJson
+ * + the non-negotiable gate.
+ *
+ *   npm run analyze-run -- <TICKER|runId>   # one run (resolved from ticker or id)
+ *   npm run analyze-run                      # drain all HARVESTED/PARTIAL runs
+ *
+ * Resumable: re-running continues where it stopped (DONE items skipped). Under an
+ * exhausted quota it PARTIALs and resumes next run. Reporting never fails the job.
+ * Run via `node --import tsx` so `@/` imports resolve.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { prisma } from "@/lib/db";
+import { runAnalysis, drainQueue, type RunOutcome } from "@/lib/orchestrate";
+
+const OUT_DIR = path.join(process.cwd(), "analyze-run-report");
+
+async function resolveRunId(arg: string): Promise<string | null> {
+  const byId = await prisma.analysisRun.findUnique({ where: { id: arg } });
+  if (byId) return byId.id;
+  const company = await prisma.company.findFirst({
+    where: { ticker: { equals: arg, mode: "insensitive" } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!company) return null;
+  const run = await prisma.analysisRun.findFirst({
+    where: { companyId: company.id },
+    orderBy: { createdAt: "desc" },
+  });
+  return run?.id ?? null;
+}
+
+function appendStepSummary(text: string) {
+  const f = process.env.GITHUB_STEP_SUMMARY;
+  if (!f) return;
+  try {
+    fs.appendFileSync(f, text + "\n");
+  } catch {
+    /* ignore */
+  }
+}
+
+async function writeReport(runId: string, outcome: RunOutcome) {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const run = await prisma.analysisRun.findUnique({ where: { id: runId }, include: { company: true } });
+  const [items, sections, results] = await Promise.all([
+    prisma.checklistItem.findMany({ orderBy: [{ sectionCode: "asc" }, { orderIndex: "asc" }] }),
+    prisma.checklistSection.findMany({ orderBy: { orderIndex: "asc" } }),
+    prisma.itemResult.findMany({ where: { runId } }),
+  ]);
+  const byId = new Map(results.map((r) => [r.itemId, r]));
+
+  const grouped = sections.map((s) => ({
+    code: s.code,
+    name: s.name,
+    items: items
+      .filter((it) => it.sectionCode === s.code)
+      .map((it) => {
+        const r = byId.get(it.id);
+        return {
+          id: it.id,
+          item: it.item,
+          status: r?.status ?? "PENDING",
+          flag: r?.flag ?? null,
+          value: r?.value ?? null,
+          verdict: r?.verdict ?? null,
+          confidence: r?.confidence ?? null,
+          provider: r?.providerUsed ?? null,
+          evidenceQuote: r?.evidenceQuote ?? null,
+          source: { sourceDocId: r?.sourceDocId ?? null, page: r?.sourcePage ?? null, url: r?.sourceUrl ?? null },
+        };
+      }),
+  }));
+
+  const report = {
+    runId,
+    ticker: run?.company.ticker ?? null,
+    company: run?.company.name ?? null,
+    status: run?.status ?? outcome.status,
+    summary: run?.summaryJson ?? outcome.summary,
+    sections: grouped,
+  };
+  fs.writeFileSync(path.join(OUT_DIR, "results.json"), JSON.stringify(report, null, 2) + "\n");
+
+  // ---- human-readable summary.md (also -> GITHUB_STEP_SUMMARY) ----
+  const s = outcome.summary;
+  const lines: string[] = [];
+  lines.push(`# Analysis run — ${report.ticker ?? runId} (${report.status})`);
+  lines.push("");
+  lines.push(
+    `Items: ${s.itemsDone} done · ${s.itemsNeedsReview} needs-review · ${s.itemsError} error · ` +
+      `${s.itemsDeferred} deferred · ${s.itemsPending} pending / ${s.itemsTotal} total`,
+  );
+  lines.push(`Flags: 🟢 ${s.totals.green} · 🔴 ${s.totals.red} · ⚪ ${s.totals.neutral} · ▫️ ${s.totals.na}  (total reds: ${s.totalReds})`);
+  lines.push(
+    `Non-negotiable gate: **${s.nonNegotiable.gatePass ? "PASS" : "FAIL"}**` +
+      (s.nonNegotiable.failedItems.length ? ` (red: ${s.nonNegotiable.failedItems.join(", ")})` : ""),
+  );
+  lines.push("");
+  lines.push("| section | 🟢 | 🔴 | ⚪ | ▫️ | total |");
+  lines.push("|---|--:|--:|--:|--:|--:|");
+  for (const sec of s.bySection) {
+    lines.push(`| ${sec.code} ${sec.name} | ${sec.green} | ${sec.red} | ${sec.neutral} | ${sec.na} | ${sec.total} |`);
+  }
+  lines.push("");
+  for (const g of grouped) {
+    lines.push(`### ${g.code} — ${g.name}`);
+    for (const it of g.items) {
+      const src = it.source.url ? ` _(src: ${it.source.url}${it.source.page != null ? ` p.${it.source.page}` : ""})_` : "";
+      lines.push(`- **${it.id}** ${it.flag ?? it.status}: ${it.item} — ${it.value ?? "—"}${src}`);
+    }
+    lines.push("");
+  }
+  const md = lines.join("\n");
+  fs.writeFileSync(path.join(OUT_DIR, "summary.md"), md + "\n");
+  appendStepSummary(md);
+}
+
+async function main() {
+  const arg = process.argv[2]?.trim();
+
+  if (!arg) {
+    console.log("Draining queue (HARVESTED / PARTIAL runs)…");
+    const outcomes = await drainQueue();
+    if (!outcomes.length) console.log("No eligible runs.");
+    for (const o of outcomes) {
+      console.log(`run ${o.runId}: ${o.status} (done=${o.summary.itemsDone}/${o.summary.itemsTotal}, deferred=${o.deferred})`);
+      await writeReport(o.runId, o);
+    }
+    return;
+  }
+
+  const runId = await resolveRunId(arg);
+  if (!runId) {
+    console.error(`No run found for "${arg}". Harvest the ticker first (harvest-validate).`);
+    fs.mkdirSync(OUT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(OUT_DIR, "results.json"), JSON.stringify({ error: `no run for ${arg}` }, null, 2) + "\n");
+    return;
+  }
+
+  console.log(`Analyzing run ${runId} …`);
+  const outcome = await runAnalysis(runId);
+  console.log(
+    `status=${outcome.status}  done=${outcome.summary.itemsDone}/${outcome.summary.itemsTotal}  ` +
+      `reds=${outcome.summary.totalReds}  deferred=${outcome.deferred}  pruned=${outcome.pruned}  ` +
+      `gate=${outcome.summary.nonNegotiable.gatePass ? "PASS" : "FAIL"}`,
+  );
+  await writeReport(runId, outcome);
+}
+
+main()
+  .catch((e) => {
+    console.error("analyze-run error:", e);
+  })
+  .finally(async () => {
+    try {
+      await prisma.$disconnect();
+    } catch {
+      /* ignore */
+    }
+  });

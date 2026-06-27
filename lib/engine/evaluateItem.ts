@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getEvidence } from "./evidence";
 import { analyzeItem } from "./analyzeItem";
 import { assignFlag } from "./flag";
+import { QuotaExhaustedError } from "./quota";
 import {
   kindOf,
   type Analysis,
@@ -66,6 +67,8 @@ export async function evaluateItem(item: EngineItem, runId: string): Promise<Ite
     await persist(result);
     return result;
   } catch (e) {
+    // Quota exhaustion is not an item error — let the orchestrator DEFER it.
+    if (e instanceof QuotaExhaustedError) throw e;
     const result: ItemEvaluation = {
       itemId: item.id,
       runId,
@@ -97,6 +100,8 @@ async function persist(r: ItemEvaluation): Promise<void> {
     value: r.value.slice(0, 200),
     evidenceQuote: r.evidenceQuote ?? null,
     sourceDocId: r.citation?.sourceDocId ?? null,
+    sourcePage: r.citation?.page ?? null,
+    sourceUrl: r.citation?.sourceUrl ?? null,
     confidence: CONFIDENCE_SCORE[r.confidence],
     isNonNegotiable: r.isNonNegotiable,
     gatePass: r.gatePass,

@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
-vi.mock("@/lib/usage", () => ({ recordProviderUsage: vi.fn() }));
+vi.mock("@/lib/usage", () => ({
+  recordProviderUsage: vi.fn(),
+  getProviderUsage: vi.fn(async () => ({ requests: 0 })),
+}));
 vi.mock("@/lib/llm", () => {
-  const mk = (id: string) => ({ id, complete: vi.fn(), completeJSON: vi.fn() });
+  const mk = (id: string) => ({ id, complete: vi.fn(), completeJSON: vi.fn(), isConfigured: () => true });
   return {
     llm: { reasoning: mk("mistral"), bulkClassify: mk("groq"), longContext: mk("gemini"), fallback: mk("nvidia") },
   };
 });
 
 import { assignFlag } from "./flag";
+import { resetQuotaState } from "./quota";
 import { llm } from "@/lib/llm";
 import type { Analysis, EngineItem } from "./types";
 
@@ -28,7 +32,10 @@ function item(p: Partial<EngineItem> & { id: string }): EngineItem {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetQuotaState();
+});
 
 describe("assignFlag", () => {
   it("numeric: classifies deterministically with NO LLM call", async () => {

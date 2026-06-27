@@ -15,7 +15,8 @@
     "db:seed": "prisma db seed",
     "test": "vitest run",
     "harvest": "node --env-file-if-exists=.env --import tsx scripts/harvest.ts",
-    "analyze": "node --env-file-if-exists=.env --import tsx scripts/analyze-validate.ts"
+    "analyze": "node --env-file-if-exists=.env --import tsx scripts/analyze-validate.ts",
+    "analyze-run": "node --env-file-if-exists=.env --import tsx scripts/analyze-run.ts"
   },
   "prisma": {
     "seed": "node prisma/seed.mts"

@@ -44,12 +44,17 @@ function latestNonNull(values: Array<string | null>): string | null {
   return null;
 }
 
+// Shared by all trend (series) items. Tolerance is ~2 percentage points (scaling
+// slightly for large bases) so a near-flat series — e.g. promoter holding
+// drifting 72.30% -> 71.77% over years — reads as "stable", not "declining".
+// This is the label only; the flag is decided separately from the level.
 function trendOf(values: Array<string | null>): string {
   const f = parseNumericValue(firstNonNull(values));
   const l = parseNumericValue(latestNonNull(values));
   if (f == null || l == null) return "n/a";
-  if (l > f + 0.5) return "rising";
-  if (l < f - 0.5) return "declining";
+  const tol = Math.max(2, Math.abs(f) * 0.02);
+  if (l > f + tol) return "rising";
+  if (l < f - tol) return "declining";
   return "stable";
 }
 
@@ -146,29 +151,28 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
     `Put the exact supporting sentence (<=200 chars) in "evidenceQuote" and its page number in "page".\n\n` +
     passagesBlock(passages);
 
-  try {
-    const { data, provider } = await callJSON<BoardExtract>("bulkClassify", { prompt, temperature: 0 }, BOARD_SCHEMA);
-    if (!data.found) return NA;
-    const pct =
-      data.percentIndependent ??
-      (data.independentDirectors && data.totalDirectors
-        ? (data.independentDirectors / data.totalDirectors) * 100
-        : null);
-    if (pct == null) return NA;
-    const counts =
-      data.independentDirectors && data.totalDirectors
-        ? ` (${data.independentDirectors} of ${data.totalDirectors})`
-        : "";
-    return {
-      value: `${round1(pct)}% independent${counts}`,
-      evidenceQuote: data.evidenceQuote,
-      citation: citationForPage(evidence, data.page),
-      confidence: counts ? "high" : "medium",
-      providerUsed: provider,
-    };
-  } catch {
-    return NA;
-  }
+  // Errors (incl. QuotaExhaustedError) propagate to evaluateItem, which records
+  // an ERROR result (retried next run) or re-throws quota errors for the
+  // orchestrator to DEFER. We only return NA when the model finds nothing.
+  const { data, provider } = await callJSON<BoardExtract>("bulkClassify", { prompt, temperature: 0 }, BOARD_SCHEMA);
+  if (!data.found) return NA;
+  const pct =
+    data.percentIndependent ??
+    (data.independentDirectors && data.totalDirectors
+      ? (data.independentDirectors / data.totalDirectors) * 100
+      : null);
+  if (pct == null) return NA;
+  const counts =
+    data.independentDirectors && data.totalDirectors
+      ? ` (${data.independentDirectors} of ${data.totalDirectors})`
+      : "";
+  return {
+    value: `${round1(pct)}% independent${counts}`,
+    evidenceQuote: data.evidenceQuote,
+    citation: citationForPage(evidence, data.page),
+    confidence: counts ? "high" : "medium",
+    providerUsed: provider,
+  };
 }
 
 // ---- qualitative (Mistral / Gemini) ----
@@ -211,19 +215,15 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
     `Put the exact supporting sentence (<=240 chars) in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
-  try {
-    const { data, provider } = await callJSON<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
-    if (!data.found || !data.value) return NA;
-    return {
-      value: data.value,
-      evidenceQuote: data.evidenceQuote,
-      citation: citationForPage(evidence, data.page),
-      confidence: "medium",
-      providerUsed: provider,
-    };
-  } catch {
-    return NA;
-  }
+  const { data, provider } = await callJSON<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
+  if (!data.found || !data.value) return NA;
+  return {
+    value: data.value,
+    evidenceQuote: data.evidenceQuote,
+    citation: citationForPage(evidence, data.page),
+    confidence: "medium",
+    providerUsed: provider,
+  };
 }
 
 function round1(n: number): number {

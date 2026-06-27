@@ -198,6 +198,8 @@ model ItemResult {
   evidenceQuote   String?       @db.Text
   sourceDoc       SourceDoc?    @relation(fields: [sourceDocId], references: [id])
   sourceDocId     String?
+  sourcePage      Int? // citation page within the source doc (survives text pruning)
+  sourceUrl       String? // citation URL (esp. for web-sourced evidence; survives pruning)
   confidence      Float? // model confidence (NOT a governance score)
   isNonNegotiable Boolean       @default(false)
   gatePass        Boolean? // non-negotiable gate outcome (null until evaluated)

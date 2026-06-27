@@ -9,6 +9,7 @@
 
 export * from "./types";
 export * from "./thresholds";
+export * from "./quota";
 export * from "./evidence";
 export * from "./analyzeItem";
 export * from "./flag";

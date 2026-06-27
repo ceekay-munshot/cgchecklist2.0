@@ -1,0 +1,77 @@
+name: analyze-run
+
+# Manual-only: runs the FULL 106-item, resumable, quota-aware analysis for a
+# company against the persistent Neon DB. Re-running continues where it stopped
+# (DONE items skipped); under an exhausted free-tier quota it PARTIALs and the
+# next run resumes. Harvest the ticker first (harvest-validate).
+#
+# Scheduling comes LATER. To run this daily, add a one-line trigger here, e.g.:
+#   schedule:
+#     - cron: "0 2 * * *"   # 02:00 UTC daily — drains the queue
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Company ticker (or an AnalysisRun id) to analyze. Must already be harvested."
+        required: true
+        default: TCS
+        type: string
+
+jobs:
+  analyze-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Engine routing: Groq=extract, Mistral=judge, Gemini=long, Nvidia=fallback.
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      SCRAPEDO_API_KEY: ${{ secrets.SCRAPEDO_API_KEY }}
+      # Optional: force a low daily cap to exercise the PARTIAL→resume path, e.g.
+      # LLM_DAILY_CAP: "20"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Guard — DATABASE_URL must be set
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::DATABASE_URL secret is not set. Analysis needs the persistent Neon DB that holds the harvested SourceDocs."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      # migrate deploy (never reset) + idempotent seed: ensures the schema
+      # (ItemResult source refs) and the 106 ChecklistItems exist before running.
+      - name: Prisma generate, migrate & seed
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run db:seed
+
+      # Inputs are passed via env (not interpolated) to avoid shell injection.
+      - name: Analyze ${{ inputs.ticker }} (all 106 items)
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: npm run analyze-run -- "$TICKER"
+
+      - name: Upload analysis report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-run-${{ inputs.ticker }}
+          path: analyze-run-report/
+          if-no-files-found: warn
