@@ -63,6 +63,26 @@ describe("assignFlag", () => {
     expect(r.flag).toBe("GREEN");
     expect(r.providerUsed).toBe("mistral");
   });
+
+  it("NUMERIC SANITY: A14-02 debt level is GREEN from Tier-1 D/E (deterministic, no LLM, never a false red)", async () => {
+    // "Text" by output_format, but anchored on Tier-1 D/E so it can't contradict A14-01.
+    const r = await assignFlag(
+      item({ id: "A14-02", outputFormat: "Text", greenFlag: "Modest", redFlag: "High debt + large advances out" }),
+      { value: "0.11", confidence: "high" },
+    );
+    expect(r.flag).toBe("GREEN");
+    expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
+  });
+
+  it("note item (numeric format) is JUDGED qualitatively, not numeric-parsed", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "Small, mostly winnable disputes." });
+    const r = await assignFlag(
+      item({ id: "A7a-03", outputFormat: "₹ / % NW", greenFlag: "Small, mostly winnable", redFlag: "Large / repeated losses" }),
+      { value: "Income-tax disputes ~Rs 1,234 cr, described as mostly winnable", confidence: "medium" },
+    );
+    expect(r.flag).toBe("GREEN"); // judged, not classifyNumeric on "1,234"
+    expect(asMock(llm.reasoning.completeJSON)).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("non-negotiable gate", () => {

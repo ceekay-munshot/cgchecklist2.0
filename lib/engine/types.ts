@@ -83,6 +83,13 @@ export interface EvidenceStrategy {
    */
   sections?: string[];
   keywords?: string[];
+  /**
+   * Read the located note(s) with Gemini (native document/table reading) rather
+   * than shallow keyword passages — for table-heavy financial-statement notes
+   * (contingent liabilities, related-party transactions). Token-bounded to the
+   * note pages.
+   */
+  useGeminiNote?: boolean;
   /** Allow a web fallback when the primary (document) source yields nothing. */
   webFallback?: boolean;
   /** Extra query terms for the web fallback (combined with the company name). */
@@ -106,6 +113,8 @@ export interface Evidence {
   status: "found" | "not_available";
   from: EvidenceFrom;
   kind: ItemKind;
+  /** "note" → passages are a located financial-statement note for Gemini table reading. */
+  mode?: "note";
   /** Tier-1 structured key/value(s) (e.g. { "Debt to equity": "0.09" }). */
   structured?: Record<string, string>;
   /** Optional series (e.g. promoter holding across periods) for trend items. */

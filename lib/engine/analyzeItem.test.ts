@@ -166,4 +166,43 @@ describe("analyzeItem", () => {
     expect(a.value).toBe("not available");
     expect(a.confidence).toBe("low");
   });
+
+  it("GATE LENIENCY: keeps an on-topic-but-thin passage as a LOW-confidence verdict (not NA)", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({
+      relevant: true,
+      found: true,
+      confident: false, // on-topic but thin
+      value: "Equity shares carry one vote each (one-share-one-vote)",
+    });
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "QUALITATIVE",
+      passages: [{ text: "The Company has one class of equity shares ...", citation: { sourceDocId: "ar1", page: 90, docType: "ANNUAL_REPORT", docName: "AR" } }],
+    };
+    const a = await analyzeItem(item({ id: "A3-04", outputFormat: "Yes/No" }), ev);
+    expect(a.value).toContain("one-share-one-vote");
+    expect(a.confidence).toBe("low"); // kept, not discarded
+  });
+
+  it("NOTE MODE: Gemini reads the located note's figures", async () => {
+    asMock(llm.longContext.completeJSON).mockResolvedValueOnce({
+      relevant: true,
+      found: true,
+      value: "Contingent liabilities ~Rs 1,234 cr (tax disputes); capital commitments Rs 567 cr",
+      evidenceQuote: "Claims not acknowledged as debt: Rs 1,234 crore",
+      page: 210,
+    });
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "NUMERIC",
+      mode: "note",
+      passages: [{ text: "Note 38. Contingent liabilities ... Rs 1,234 crore ...", citation: { sourceDocId: "ar1", page: 210, docType: "ANNUAL_REPORT", docName: "AR" } }],
+    };
+    const a = await analyzeItem(item({ id: "A7a-03", outputFormat: "₹ / % NW" }), ev);
+    expect(a.value).toContain("1,234");
+    expect(a.providerUsed).toBe("gemini");
+    expect(a.citation?.page).toBe(210);
+  });
 });

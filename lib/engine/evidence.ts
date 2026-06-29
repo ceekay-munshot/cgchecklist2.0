@@ -25,6 +25,7 @@ import {
 const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
   // Tier-1 numeric — read or computed from structuredData (no LLM)
   "A14-01": { from: "screener", screenerFields: [{ kind: "debtToEquity", label: "Debt to equity" }] },
+  "A14-02": { from: "screener", screenerFields: [{ kind: "debtToEquity", label: "Debt to equity" }] },
   "A3-02": { from: "screener", screenerFields: [{ kind: "shareholding", series: "pledged", label: "Pledged %" }] },
   "A3-01": { from: "screener", screenerFields: [{ kind: "shareholding", series: "promoters", label: "Promoter holding %" }] },
   "A3-06": { from: "screener", screenerFields: [{ kind: "freeFloat", label: "Free float" }] },
@@ -74,14 +75,22 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
  * every item in a section gets note-aware retrieval (locate the right note first)
  * and terminology coverage — not just shallow single-keyword search.
  */
-const SECTION_PROFILE: Record<string, { sections?: string[]; keywords?: string[]; docTypes?: SourceDocType[] }> = {
+const SECTION_PROFILE: Record<
+  string,
+  { sections?: string[]; keywords?: string[]; docTypes?: SourceDocType[]; useGeminiNote?: boolean }
+> = {
   A2: {
     sections: ["audit committee", "nomination and remuneration committee", "stakeholders relationship committee", "corporate social responsibility committee", "risk management committee", "composition of the committees"],
     keywords: ["committee", "independent", "meetings held", "attendance", "chairperson", "constituted"],
   },
+  A3: {
+    sections: ["share capital", "equity share capital", "rights, preferences and restrictions"],
+    keywords: ["one vote", "differential voting", "equity shares", "per share", "voting rights", "face value"],
+  },
   A5: {
     sections: ["related party transactions", "related party disclosures", "transactions with related parties"],
     keywords: ["related party", "related parties", "arm's length", "key managerial personnel", "ordinary course of business", "subsidiaries"],
+    useGeminiNote: true, // table-heavy RPT note — Gemini reads the figures
   },
   A6: {
     sections: ["nomination and remuneration policy", "remuneration of directors", "managerial remuneration", "remuneration to key managerial"],
@@ -90,6 +99,7 @@ const SECTION_PROFILE: Record<string, { sections?: string[]; keywords?: string[]
   A7a: {
     sections: ["contingent liabilities and commitments", "contingent liabilities", "commitments"],
     keywords: ["contingent", "guarantee", "claims not acknowledged as debt", "commitments", "disputed", "demand"],
+    useGeminiNote: true, // table-heavy CL note — Gemini reads the figures
   },
   A8: {
     sections: ["material accounting policies", "significant accounting policies", "property, plant and equipment", "intangible assets", "revenue recognition"],
@@ -119,6 +129,19 @@ function keywordsFromItem(item: EngineItem): string[] {
 }
 
 function defaultStrategy(item: EngineItem): EvidenceStrategy {
+  // Items in a profiled section read from the annual-report notes/sections —
+  // even NUMERIC ones, because their figures live in the AR notes (contingent
+  // liabilities, RPT, committees), not in the Tier-1 Screener page.
+  const profile = SECTION_PROFILE[item.sectionCode];
+  if (profile) {
+    return {
+      from: "document",
+      docTypes: profile.docTypes ?? defaultDocTypesForSection(item.sectionCode),
+      sections: profile.sections,
+      keywords: Array.from(new Set([...(profile.keywords ?? []), ...keywordsFromItem(item)])).slice(0, 12),
+      useGeminiNote: profile.useGeminiNote,
+    };
+  }
   if (kindOf(item) === "NUMERIC") {
     const longest = item.item
       .toLowerCase()
@@ -130,12 +153,10 @@ function defaultStrategy(item: EngineItem): EvidenceStrategy {
       screenerFields: longest ? [{ kind: "ratio", match: new RegExp(longest, "i"), label: item.item }] : [],
     };
   }
-  const profile = SECTION_PROFILE[item.sectionCode];
   return {
     from: "document",
-    docTypes: profile?.docTypes ?? defaultDocTypesForSection(item.sectionCode),
-    sections: profile?.sections,
-    keywords: Array.from(new Set([...(profile?.keywords ?? []), ...keywordsFromItem(item)])).slice(0, 12),
+    docTypes: defaultDocTypesForSection(item.sectionCode),
+    keywords: keywordsFromItem(item),
   };
 }
 
@@ -245,6 +266,9 @@ const MAX_PASSAGES = 4;
 const MAX_EVIDENCE_CHARS = 6500;
 const PER_PASSAGE_CHARS = 1800;
 const SECTION_CHARS = 4500; // window extracted for a located note/section
+// Gemini note reading gets a larger window so the whole table is visible.
+const NOTE_BUDGET_CHARS = 14_000;
+const NOTE_SECTION_CHARS = 7000;
 
 async function getDocumentEvidence(
   runId: string,
@@ -259,9 +283,15 @@ async function getDocumentEvidence(
     return { status: "not_available", from: "document", kind, note: "no documents with extracted text" };
   }
 
+  const note = !!strategy.useGeminiNote;
   // 1) Note/section-aware: locate the relevant heading and extract the whole note.
   let passages: EvidencePassage[] = strategy.sections?.length
-    ? extractSectionPassages(docs, strategy.sections)
+    ? extractSectionPassages(
+        docs,
+        strategy.sections,
+        note ? NOTE_BUDGET_CHARS : MAX_EVIDENCE_CHARS,
+        note ? NOTE_SECTION_CHARS : SECTION_CHARS,
+      )
     : [];
   // 2) Fall back to keyword scoring when no heading matched.
   if (!passages.length) {
@@ -270,7 +300,14 @@ async function getDocumentEvidence(
   if (!passages.length) {
     return { status: "not_available", from: "document", kind, note: "no matching note/section or keyword passages" };
   }
-  return { status: "found", from: "document", kind, passages, citation: passages[0].citation };
+  return {
+    status: "found",
+    from: "document",
+    kind,
+    mode: note ? "note" : undefined,
+    passages,
+    citation: passages[0].citation,
+  };
 }
 
 /** The most note-like occurrence of a heading (its following window is digit-dense, unlike a TOC line). */
@@ -304,9 +341,14 @@ function pageAtOffset(text: string, offset: number): number | null {
 }
 
 /** Locate each note/section heading and extract its whole body (token-budgeted). */
-function extractSectionPassages(docs: SourceDoc[], headings: string[]): EvidencePassage[] {
+function extractSectionPassages(
+  docs: SourceDoc[],
+  headings: string[],
+  budgetMax: number = MAX_EVIDENCE_CHARS,
+  sectionChars: number = SECTION_CHARS,
+): EvidencePassage[] {
   const out: EvidencePassage[] = [];
-  let budget = MAX_EVIDENCE_CHARS;
+  let budget = budgetMax;
   for (const doc of docs) {
     const text = doc.extractedText ?? "";
     if (!text) continue;
@@ -315,7 +357,7 @@ function extractSectionPassages(docs: SourceDoc[], headings: string[]): Evidence
       if (out.length >= MAX_PASSAGES || budget <= 0) break;
       const at = bestHeadingOffset(lower, heading.toLowerCase());
       if (at < 0) continue;
-      const body = text.slice(at, at + SECTION_CHARS).trim().slice(0, budget);
+      const body = text.slice(at, at + sectionChars).trim().slice(0, budget);
       if (!body) continue;
       budget -= body.length;
       out.push({

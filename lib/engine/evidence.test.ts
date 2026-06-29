@@ -64,6 +64,12 @@ describe("evidenceStrategyFor — routing per item", () => {
     expect(s.from).toBe("document");
     expect(s.sections).toContain("contingent liabilities and commitments");
   });
+  it("marks table-heavy notes (A7a, A5) for Gemini note reading", () => {
+    expect(evidenceStrategyFor(item({ id: "A7a-03", outputFormat: "₹ / % NW" })).useGeminiNote).toBe(true);
+    expect(evidenceStrategyFor(item({ id: "A5-02", outputFormat: "% of sales" })).useGeminiNote).toBe(true);
+    // a non-note document item is NOT flagged for Gemini note reading
+    expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).useGeminiNote).toBeFalsy();
+  });
 });
 
 describe("getEvidence", () => {
@@ -153,6 +159,7 @@ describe("getEvidence", () => {
     const ev = await getEvidence(item({ id: "A7a-13", outputFormat: "Trend" }), "run1");
     expect(ev.status).toBe("found");
     expect(ev.from).toBe("document");
+    expect(ev.mode).toBe("note"); // routed to Gemini note reading
     expect(ev.passages?.[0].citation.page).toBe(210);
     expect(ev.passages?.[0].text).toContain("Claims against the Company");
   });

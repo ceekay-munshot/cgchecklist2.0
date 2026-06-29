@@ -415,6 +415,28 @@ grabbing an off-topic passage. Fixes:
   -- <ticker> --force` (and the `force` workflow input) re-evaluate ALL 106
   ignoring prior status — so items judged under an older engine refresh.
 
+**Done (Phase 7 — trustworthy flags + recover coverage):** Phase 6 fixed numerics
+but OVERCORRECTED documents (NA rose 54→68: the relevance gate rejected correct
+answers, table-heavy notes still weren't read, and both reds were wrong). Goal:
+**zero confident-wrong flags** AND recover coverage (not zero NA).
+- **Lenient relevance gate.** Reject only CLEARLY off-topic passages (different
+  subject); an on-topic-but-thin passage returns a **low-confidence** verdict, not
+  NA (`confident` flag → low confidence). Recovers A3-04, A11-04, A13-03 and the
+  A13 section (regressed to NA under the strict gate).
+- **Numeric sanity (debt).** `A14-02` (debt level) is anchored on the SAME Tier-1
+  D/E as A14-01, so a document mis-read of "borrowings" can't produce a
+  contradictory leverage verdict (`reconcileDebtWithTier1` is the documented
+  cross-check). A14-02 → GREEN for debt-free TCS.
+- **Gemini note reading for table-heavy notes.** `EvidenceStrategy.useGeminiNote`
+  routes the contingent-liabilities and related-party NOTES (A7a, A5) to Gemini
+  (`evidence.mode="note"`, larger note window) to reconstruct figures that
+  keyword/Mistral missed. Items in a profiled section read AR notes even when
+  NUMERIC (their figures live in the notes, not Screener).
+- **Concept-confusion guard.** The qualitative judge is told to use only evidence
+  of the item's type (goodwill is not a contingent liability; revenue is not
+  remuneration), and the note path reads the CL note specifically — so A7a-13 no
+  longer false-reds on a goodwill increase.
+
 **Later phases:** `lib/export` (xlsx/pdf/pptx); a **daily schedule** for
 `analyze-run` (drain the queue under quota). (`lib/ingest` is now largely
 covered by `lib/harvest`.)

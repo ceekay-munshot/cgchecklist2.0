@@ -186,4 +186,26 @@ export const CUSTOM_NUMERIC: Record<string, (n: number) => NumericClassification
     if (n >= 2.0) return { flag: "RED", reason: `Wide cash-vs-accounting EPS gap (ratio ${n}); large non-cash add-backs.` };
     return { flag: "NEUTRAL", reason: `Moderate cash-vs-accounting EPS gap (ratio ${n}).` };
   },
+  // A14-02 Debt & advances level — NUMERIC SANITY: the debt level is anchored on
+  // the SAME Tier-1 D/E as A14-01, so a document mis-read of "borrowings" can
+  // never produce a leverage verdict that contradicts A14-01.
+  "A14-02": (n) => {
+    if (n <= 1) return { flag: "GREEN", reason: `Modest leverage — D/E ${n} (Tier-1); debt level is conservative.` };
+    if (n > 2) return { flag: "RED", reason: `High leverage — D/E ${n} (Tier-1).` };
+    return { flag: "NEUTRAL", reason: `Moderate leverage — D/E ${n} (Tier-1).` };
+  },
 };
+
+/**
+ * Numeric sanity primitive: decide whether to trust a debt/borrowings figure
+ * extracted from a document. If the document implies high debt but the Tier-1
+ * D/E says the company is (near) debt-free, the document extraction is
+ * inconsistent — distrust it and use Tier-1.
+ */
+export function reconcileDebtWithTier1(
+  docImpliesHighDebt: boolean,
+  tier1DebtToEquity: number | null,
+): "trust_doc" | "use_tier1" {
+  if (docImpliesHighDebt && tier1DebtToEquity != null && tier1DebtToEquity < 1) return "use_tier1";
+  return "trust_doc";
+}

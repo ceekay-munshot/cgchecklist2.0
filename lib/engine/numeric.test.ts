@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
-import { computeNumeric, CUSTOM_NUMERIC } from "./numeric";
+import { computeNumeric, CUSTOM_NUMERIC, reconcileDebtWithTier1 } from "./numeric";
 
 const DATA = {
   ticker: "X",
@@ -86,5 +86,22 @@ describe("CUSTOM_NUMERIC — classifiers for textual-band items", () => {
     expect(CUSTOM_NUMERIC["A8-11"](1.1).flag).toBe("GREEN");
     expect(CUSTOM_NUMERIC["A8-11"](1.6).flag).toBe("NEUTRAL");
     expect(CUSTOM_NUMERIC["A8-11"](2.5).flag).toBe("RED");
+  });
+  it("A14-02 debt level anchored on Tier-1 D/E: never red when debt-free", () => {
+    // D/E 0.11 (TCS) -> GREEN, never RED — can't contradict A14-01.
+    expect(CUSTOM_NUMERIC["A14-02"](0.11).flag).toBe("GREEN");
+    expect(CUSTOM_NUMERIC["A14-02"](1.5).flag).toBe("NEUTRAL");
+    expect(CUSTOM_NUMERIC["A14-02"](3).flag).toBe("RED");
+  });
+});
+
+describe("reconcileDebtWithTier1 — numeric sanity cross-check", () => {
+  it("distrusts a high-debt document figure when Tier-1 D/E says debt-free", () => {
+    expect(reconcileDebtWithTier1(true, 0.11)).toBe("use_tier1");
+  });
+  it("trusts the document when Tier-1 agrees (or is unknown)", () => {
+    expect(reconcileDebtWithTier1(true, 3)).toBe("trust_doc");
+    expect(reconcileDebtWithTier1(false, 0.11)).toBe("trust_doc");
+    expect(reconcileDebtWithTier1(true, null)).toBe("trust_doc");
   });
 });

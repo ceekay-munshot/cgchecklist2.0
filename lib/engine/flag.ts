@@ -1,4 +1,5 @@
 import { callJSON } from "./llm";
+import { evidenceStrategyFor } from "./evidence";
 import { CUSTOM_NUMERIC } from "./numeric";
 import { classifyNumeric, parseNumericValue } from "./thresholds";
 import {
@@ -37,8 +38,10 @@ function judgePrompt(item: EngineItem, analysis: Analysis): string {
     (analysis.evidenceQuote ? `Evidence: ${analysis.evidenceQuote}\n` : "") +
     `\nDecide the flag for this finding: GREEN if it matches the green description, ` +
     `RED if it matches the red description, otherwise NEUTRAL. Base the decision ONLY ` +
-    `on the finding/evidence above; if it is ambiguous or unsupported, choose NEUTRAL. ` +
-    `Give a ONE-sentence reason.`
+    `on the finding/evidence above. Use ONLY evidence of the type this item asks about — ` +
+    `if the finding is actually about a DIFFERENT concept (e.g. goodwill is not a ` +
+    `contingent liability; a revenue figure is not remuneration), choose NEUTRAL. ` +
+    `If it is ambiguous or unsupported, choose NEUTRAL. Give a ONE-sentence reason.`
   );
 }
 
@@ -71,15 +74,25 @@ export async function assignFlag(item: EngineItem, analysis: Analysis): Promise<
     return applyGate(item, { flag: "NOT_AVAILABLE", reason: "No evidence available." });
   }
 
-  if (kindOf(item) === "NUMERIC") {
-    const num = parseNumericValue(analysis.value);
+  const num = parseNumericValue(analysis.value);
+
+  // Dedicated deterministic classifier (textual-band items like A8-10, and
+  // Tier-1-anchored items like A14-02 that are "Text" by format but numeric by
+  // value). Runs first so numeric sanity holds regardless of output_format.
+  const custom = CUSTOM_NUMERIC[item.id];
+  if (custom && num != null) {
+    const c = custom(num);
+    return applyGate(item, { flag: c.flag, reason: c.reason });
+  }
+
+  // NUMERIC items with parseable green/red bands are classified deterministically —
+  // EXCEPT note items, whose value is a figures statement judged qualitatively.
+  const noteItem = evidenceStrategyFor(item).useGeminiNote === true;
+  if (kindOf(item) === "NUMERIC" && !noteItem) {
     if (num == null) {
       return applyGate(item, { flag: "NEUTRAL", reason: `Could not parse a number from "${analysis.value}".` });
     }
-    // Items whose checklist bands are textual (e.g. "Near statutory (~25%)") use a
-    // dedicated deterministic classifier; the rest parse green/red bands directly.
-    const custom = CUSTOM_NUMERIC[item.id];
-    const c = custom ? custom(num) : classifyNumeric(num, item.greenFlag, item.redFlag);
+    const c = classifyNumeric(num, item.greenFlag, item.redFlag);
     return applyGate(item, { flag: c.flag, reason: c.reason });
   }
 

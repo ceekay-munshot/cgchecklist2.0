@@ -74,7 +74,12 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   if (evidence.from === "screener" && evidence.structured) {
     return analyzeScreener(evidence);
   }
-  if (evidence.kind === "NUMERIC") {
+  // Table-heavy financial-statement notes → Gemini reads the note's figures.
+  if (evidence.mode === "note") {
+    return analyzeNote(item, evidence);
+  }
+  // Board composition is the one numeric-from-document extractor (A1-01).
+  if (item.id === "A1-01") {
     return analyzeNumericFromPassages(item, evidence);
   }
   return analyzeQualitative(item, evidence);
@@ -183,6 +188,7 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
 interface QualExtract {
   relevant: boolean;
   found: boolean;
+  confident?: boolean;
   value?: string;
   evidenceQuote?: string;
   page?: number | null;
@@ -193,6 +199,7 @@ const QUAL_SCHEMA = {
   properties: {
     relevant: { type: "boolean" },
     found: { type: "boolean" },
+    confident: { type: "boolean" },
     value: { type: "string" },
     evidenceQuote: { type: "string" },
     page: { type: ["integer", "null"] },
@@ -213,16 +220,16 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   const prompt =
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
-    `\nRELEVANCE GATE — FIRST decide whether these excerpts actually address THIS ` +
-    `specific item, not just a passage that happens to share a word (e.g. a revenue ` +
-    `line is NOT about a contingent-liability movement; a CSR officer is NOT about ` +
-    `family disputes). If they are off-topic, set "relevant" to false — we will record ` +
-    `"not available" rather than judge an unrelated snippet.\n` +
-    `If relevant, state the CONCISE fact for this item (a short phrase, not a paragraph; ` +
-    `e.g. an auditor's name and whether it is Big Four; or a one-line view). Do NOT decide ` +
-    `green/red here — just the fact. If relevant but the excerpts don't answer it, set ` +
-    `"found" to false. Put the exact supporting sentence (<=240 chars) in "evidenceQuote" ` +
-    `and its page in "page".\n\n` +
+    `\nRELEVANCE GATE — set "relevant" to false ONLY if these excerpts are about a ` +
+    `CLEARLY DIFFERENT subject than this item (e.g. a revenue line for a contingent-` +
+    `liability item, or a CSR officer for "family disputes"). Sharing some general ` +
+    `topic counts as relevant. When in doubt, treat it as RELEVANT — do not reject ` +
+    `merely because the passage is brief or indirect.\n` +
+    `If relevant, state the CONCISE fact for this item (a short phrase, not a paragraph). ` +
+    `Do NOT decide green/red — just the fact. If the excerpts genuinely don't answer it, ` +
+    `set "found" to false. Set "confident" to false when the passage is on-topic but thin ` +
+    `(we keep a low-confidence verdict rather than discarding it). Put the exact supporting ` +
+    `sentence (<=240 chars) in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
   const { data, provider } = await callJSON<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
@@ -231,7 +238,46 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
     value: data.value,
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
-    confidence: "medium",
+    confidence: data.confident === false ? "low" : "medium",
+    providerUsed: provider,
+  };
+}
+
+// ---- table-heavy notes (Gemini reads the note's figures) ----
+
+function noteNameFor(item: EngineItem): string {
+  if (item.sectionCode === "A7a") return "Contingent liabilities and commitments";
+  if (item.sectionCode === "A5") return "Related party transactions";
+  return "the relevant financial-statement note";
+}
+
+async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analysis> {
+  const passages = evidence.passages ?? [];
+  if (!passages.length) return NA;
+
+  const prompt =
+    `You are reading the "${noteNameFor(item)}" note from an annual report. PDF tables ` +
+    `are often flattened into messy text — reconstruct the figures carefully.\n` +
+    `Checklist item: ${item.item}\n` +
+    (item.description ? `Definition: ${item.description}\n` : "") +
+    `\nExtract the SPECIFIC figures this item needs (amounts in Rs crore, with year if ` +
+    `shown — e.g. tax disputes, guarantees, capital commitments; or RPT totals, royalty/` +
+    `brand fees, loans to group) and summarise them in "value" as a concise factual ` +
+    `statement INCLUDING the key numbers. RELEVANCE: set "relevant" to false ONLY if these ` +
+    `excerpts are clearly a different note. If relevant but the figure isn't present, set ` +
+    `"found" to false. Set "confident" to false if the figures are unclear/partial. Put the ` +
+    `exact supporting line in "evidenceQuote" and its page in "page".\n\n` +
+    passagesBlock(passages);
+
+  // Gemini (longContext) is best at reconstructing flattened tables; the quota
+  // layer falls back through the chain if it is unavailable.
+  const { data, provider } = await callJSON<QualExtract>("longContext", { prompt, temperature: 0 }, QUAL_SCHEMA);
+  if (!data.relevant || !data.found || !data.value) return NA;
+  return {
+    value: data.value,
+    evidenceQuote: data.evidenceQuote,
+    citation: citationForPage(evidence, data.page),
+    confidence: data.confident === false ? "low" : "medium",
     providerUsed: provider,
   };
 }
