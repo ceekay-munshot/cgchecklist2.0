@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import { runAnalysis, drainQueue, type RunOutcome } from "@/lib/orchestrate";
+import { runAnalysis, drainQueue, isCommitted, type RunOutcome } from "@/lib/orchestrate";
 
 const OUT_DIR = path.join(process.cwd(), "analyze-run-report");
 
@@ -59,11 +59,18 @@ async function writeReport(runId: string, outcome: RunOutcome) {
       .filter((it) => it.sectionCode === s.code)
       .map((it) => {
         const r = byId.get(it.id);
+        // Mirror summarize(): only a COMMITTED (terminal) item exposes a live
+        // `flag`. A non-terminal item keeps its old flag in `staleFlag` so the
+        // value isn't lost, but `flag` is null — machine consumers of
+        // results.json then agree with summary.totals instead of reading a
+        // deferred item's leftover RED/GREEN as a fresh verdict.
+        const committed = isCommitted(r?.status);
         return {
           id: it.id,
           item: it.item,
           status: r?.status ?? "PENDING",
-          flag: r?.flag ?? null,
+          flag: committed ? (r?.flag ?? null) : null,
+          staleFlag: !committed && r?.flag ? r.flag : null,
           value: r?.value ?? null,
           verdict: r?.verdict ?? null,
           confidence: r?.confidence ?? null,
@@ -109,7 +116,13 @@ async function writeReport(runId: string, outcome: RunOutcome) {
     lines.push(`### ${g.code} — ${g.name}`);
     for (const it of g.items) {
       const src = it.source.url ? ` _(src: ${it.source.url}${it.source.page != null ? ` p.${it.source.page}` : ""})_` : "";
-      lines.push(`- **${it.id}** ${it.flag ?? it.status}: ${it.item} — ${it.value ?? "—"}${src}`);
+      // `flag` is already committed-only (set above); a non-terminal item exposes
+      // its leftover flag as `staleFlag`, marked so a PARTIAL run's report can't
+      // be misread as a fresh verdict for every line.
+      const statusTag = it.flag
+        ? it.flag
+        : `${it.status}${it.staleFlag ? ` (stale ${it.staleFlag})` : ""}`;
+      lines.push(`- **${it.id}** ${statusTag}: ${it.item} — ${it.value ?? "—"}${src}`);
     }
     lines.push("");
   }
