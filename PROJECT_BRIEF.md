@@ -374,9 +374,9 @@ batch for a run — `runAnalysis(runId)` evaluates every item via
   under its daily cap and not in cooldown. A 429 puts a provider in a short
   **cooldown** (`LLM_COOLDOWN_MS`, default 60s) — NOT a permanent retire — so it
   returns to rotation once its window resets; when every eligible provider is
-  cooling, the call **waits out** the soonest (bounded by `LLM_MAX_WAIT_MS`) so it
-  succeeds within the run. A provider is retired only after repeated strikes
-  (`LLM_MAX_STRIKES`, a real cap). When no provider can serve a call →
+  cooling, the call **waits out** the soonest (bounded by `LLM_MAX_WAIT_MS`,
+  default 150s ≈ two windows) so it succeeds within the run. A provider is
+  retired only after repeated strikes (`LLM_MAX_STRIKES`, default 8 — a real cap). When no provider can serve a call →
   `QuotaExhaustedError` → the item is **DEFERRED**, the run goes **PARTIAL**, the
   next run resumes. **Tier-1 zero-LLM numeric items always complete** regardless.
 - **Completion + storage thrift.** When no items remain pending/error/deferred:

@@ -56,10 +56,13 @@ export function cooldownMs(): number {
   return Number(process.env.LLM_COOLDOWN_MS) || 60_000;
 }
 export function maxWaitMs(): number {
-  return Number(process.env.LLM_MAX_WAIT_MS) || 75_000;
+  // Wait out up to ~2 free-tier per-minute windows per call before deferring.
+  return Number(process.env.LLM_MAX_WAIT_MS) || 150_000;
 }
 export function maxStrikes(): number {
-  return Number(process.env.LLM_MAX_STRIKES) || 4;
+  // Keep a provider in rotation across more transient 429s before retiring it,
+  // so a single run drains more of the tail on tight free tiers.
+  return Number(process.env.LLM_MAX_STRIKES) || 8;
 }
 
 // In-process state for this run.
