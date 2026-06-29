@@ -64,6 +64,27 @@ describe("runAnalysis — resumable", () => {
     expect(asMock(evaluateItem)).toHaveBeenCalledTimes(2); // only the 2 not-DONE
     expect(out.status).toBe("DONE");
   });
+
+  it("--force re-evaluates ALL items, including DONE ones", async () => {
+    asMock(prisma.checklistItem.findMany).mockResolvedValue(mkItems(4));
+    asMock(prisma.itemResult.findMany)
+      .mockResolvedValueOnce([
+        { itemId: "A1-01", status: "DONE" },
+        { itemId: "A1-02", status: "DONE" },
+      ])
+      .mockResolvedValueOnce([
+        { itemId: "A1-01", status: "DONE", flag: "GREEN" },
+        { itemId: "A1-02", status: "DONE", flag: "GREEN" },
+        { itemId: "A1-03", status: "DONE", flag: "GREEN" },
+        { itemId: "A1-04", status: "DONE", flag: "GREEN" },
+      ]);
+    asMock(evaluateItem).mockResolvedValue({});
+
+    const out = await runAnalysis("run1", { force: true });
+
+    expect(asMock(evaluateItem)).toHaveBeenCalledTimes(4); // ALL, despite 2 already DONE
+    expect(out.status).toBe("DONE");
+  });
 });
 
 describe("runAnalysis — completion + prune", () => {

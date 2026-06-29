@@ -1,4 +1,5 @@
 import { callJSON } from "./llm";
+import { CUSTOM_NUMERIC } from "./numeric";
 import { classifyNumeric, parseNumericValue } from "./thresholds";
 import {
   isNotAvailable,
@@ -75,7 +76,10 @@ export async function assignFlag(item: EngineItem, analysis: Analysis): Promise<
     if (num == null) {
       return applyGate(item, { flag: "NEUTRAL", reason: `Could not parse a number from "${analysis.value}".` });
     }
-    const c = classifyNumeric(num, item.greenFlag, item.redFlag);
+    // Items whose checklist bands are textual (e.g. "Near statutory (~25%)") use a
+    // dedicated deterministic classifier; the rest parse green/red bands directly.
+    const custom = CUSTOM_NUMERIC[item.id];
+    const c = custom ? custom(num) : classifyNumeric(num, item.greenFlag, item.redFlag);
     return applyGate(item, { flag: c.flag, reason: c.reason });
   }
 

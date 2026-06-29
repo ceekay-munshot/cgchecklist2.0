@@ -115,6 +115,7 @@ function analyzeScreener(evidence: Evidence): Analysis {
 // ---- numeric-from-document (Groq extraction) ----
 
 interface BoardExtract {
+  relevant: boolean;
   found: boolean;
   independentDirectors?: number | null;
   totalDirectors?: number | null;
@@ -126,6 +127,7 @@ interface BoardExtract {
 const BOARD_SCHEMA = {
   type: "object",
   properties: {
+    relevant: { type: "boolean" },
     found: { type: "boolean" },
     independentDirectors: { type: ["integer", "null"] },
     totalDirectors: { type: ["integer", "null"] },
@@ -133,7 +135,7 @@ const BOARD_SCHEMA = {
     evidenceQuote: { type: "string" },
     page: { type: ["integer", "null"] },
   },
-  required: ["found"],
+  required: ["relevant", "found"],
   additionalProperties: false,
 } as const;
 
@@ -144,18 +146,19 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
   const prompt =
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
-    `\nFrom these annual-report excerpts, determine the board composition. ` +
-    `Count INDEPENDENT directors and TOTAL directors, and compute ` +
-    `percentIndependent = independent / total * 100. Use the most complete/recent statement. ` +
-    `If the excerpts do not state it, set "found" to false. ` +
-    `Put the exact supporting sentence (<=200 chars) in "evidenceQuote" and its page number in "page".\n\n` +
+    `\nFIRST decide if these excerpts are ACTUALLY about board composition / director ` +
+    `independence for this item (not merely sharing a word); if not, set "relevant" to false.\n` +
+    `If relevant, determine the board composition: count INDEPENDENT directors and TOTAL ` +
+    `directors and compute percentIndependent = independent / total * 100 (use the most ` +
+    `complete/recent statement). If the excerpts do not state it, set "found" to false. ` +
+    `Put the exact supporting sentence (<=200 chars) in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
   // Errors (incl. QuotaExhaustedError) propagate to evaluateItem, which records
   // an ERROR result (retried next run) or re-throws quota errors for the
   // orchestrator to DEFER. We only return NA when the model finds nothing.
   const { data, provider } = await callJSON<BoardExtract>("bulkClassify", { prompt, temperature: 0 }, BOARD_SCHEMA);
-  if (!data.found) return NA;
+  if (!data.relevant || !data.found) return NA;
   const pct =
     data.percentIndependent ??
     (data.independentDirectors && data.totalDirectors
@@ -178,6 +181,7 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
 // ---- qualitative (Mistral / Gemini) ----
 
 interface QualExtract {
+  relevant: boolean;
   found: boolean;
   value?: string;
   evidenceQuote?: string;
@@ -187,12 +191,13 @@ interface QualExtract {
 const QUAL_SCHEMA = {
   type: "object",
   properties: {
+    relevant: { type: "boolean" },
     found: { type: "boolean" },
     value: { type: "string" },
     evidenceQuote: { type: "string" },
     page: { type: ["integer", "null"] },
   },
-  required: ["found"],
+  required: ["relevant", "found"],
   additionalProperties: false,
 } as const;
 
@@ -208,15 +213,20 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   const prompt =
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
-    `\nFrom the excerpts below, state the CONCISE fact relevant to this item ` +
-    `(a short phrase, not a paragraph — e.g. an auditor's name and whether it is a ` +
-    `Big Four / reputed firm; or a one-line view). Do NOT decide green/red here — ` +
-    `just the fact. If the excerpts do not support an answer, set "found" to false. ` +
-    `Put the exact supporting sentence (<=240 chars) in "evidenceQuote" and its page in "page".\n\n` +
+    `\nRELEVANCE GATE — FIRST decide whether these excerpts actually address THIS ` +
+    `specific item, not just a passage that happens to share a word (e.g. a revenue ` +
+    `line is NOT about a contingent-liability movement; a CSR officer is NOT about ` +
+    `family disputes). If they are off-topic, set "relevant" to false — we will record ` +
+    `"not available" rather than judge an unrelated snippet.\n` +
+    `If relevant, state the CONCISE fact for this item (a short phrase, not a paragraph; ` +
+    `e.g. an auditor's name and whether it is Big Four; or a one-line view). Do NOT decide ` +
+    `green/red here — just the fact. If relevant but the excerpts don't answer it, set ` +
+    `"found" to false. Put the exact supporting sentence (<=240 chars) in "evidenceQuote" ` +
+    `and its page in "page".\n\n` +
     passagesBlock(passages);
 
   const { data, provider } = await callJSON<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
-  if (!data.found || !data.value) return NA;
+  if (!data.relevant || !data.found || !data.value) return NA;
   return {
     value: data.value,
     evidenceQuote: data.evidenceQuote,

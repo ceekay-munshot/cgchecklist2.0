@@ -106,6 +106,7 @@ describe("analyzeItem", () => {
 
   it("extracts board independence as a numeric value via Groq", async () => {
     asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({
+      relevant: true,
       found: true,
       independentDirectors: 6,
       totalDirectors: 11,
@@ -128,6 +129,7 @@ describe("analyzeItem", () => {
 
   it("extracts a qualitative fact via the reasoning model", async () => {
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({
+      relevant: true,
       found: true,
       value: "Audited by B S R & Co. LLP (KPMG network) — a Big Four affiliate",
       evidenceQuote: "M/s B S R & Co. LLP, Chartered Accountants",
@@ -144,5 +146,24 @@ describe("analyzeItem", () => {
     expect(a.value).toContain("B S R & Co");
     expect(a.providerUsed).toBe("mistral");
     expect(a.citation?.page).toBe(120);
+  });
+
+  it("RELEVANCE GATE: returns 'not available' for an off-topic passage instead of judging it", async () => {
+    // The model decides the excerpt isn't actually about this item (shares a word only).
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({
+      relevant: false,
+      found: false,
+      value: "Revenue from operations grew 5%",
+    });
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "QUALITATIVE",
+      passages: [{ text: "Revenue from operations ...", citation: { sourceDocId: "ar1", page: 7, docType: "ANNUAL_REPORT", docName: "AR" } }],
+    };
+    // e.g. A7a-13 (contingent-liability movement) handed a revenue passage → NA, not a wrong flag.
+    const a = await analyzeItem(item({ id: "A7a-13", outputFormat: "Trend" }), ev);
+    expect(a.value).toBe("not available");
+    expect(a.confidence).toBe("low");
   });
 });

@@ -54,6 +54,16 @@ describe("evidenceStrategyFor — routing per item", () => {
     expect(evidenceStrategyFor(item({ id: "A15-99", outputFormat: "%" })).from).toBe("screener");
     expect(evidenceStrategyFor(item({ id: "A5-99", outputFormat: "Yes/No" })).from).toBe("document");
   });
+  it("routes computed-numeric items to the Screener page with the right field", () => {
+    const s = evidenceStrategyFor(item({ id: "A8-01", outputFormat: "Ratio (cumulative)" }));
+    expect(s.from).toBe("screener");
+    expect(s.screenerFields?.[0]).toMatchObject({ kind: "cfoToPat" });
+  });
+  it("gives section-profiled document items note headings to locate", () => {
+    const s = evidenceStrategyFor(item({ id: "A7a-13", outputFormat: "Trend" }));
+    expect(s.from).toBe("document");
+    expect(s.sections).toContain("contingent liabilities and commitments");
+  });
 });
 
 describe("getEvidence", () => {
@@ -106,5 +116,44 @@ describe("getEvidence", () => {
     expect(ev.from).toBe("document");
     expect(ev.passages?.[0].citation.page).toBe(5);
     expect(ev.passages?.[0].citation.sourceDocId).toBe("ar1");
+  });
+
+  it("computes a Tier-1 numeric (CFO/PAT) from structuredData (no LLM)", async () => {
+    vi.mocked(prisma.sourceDoc.findFirst).mockResolvedValue(
+      sd({
+        id: "sp1",
+        type: "SCREENER_PAGE",
+        sourceUrl: "u",
+        name: "Screener page",
+        structuredData: {
+          profitLoss: { periods: ["FY23", "FY24"], rows: [{ label: "Net Profit", values: ["100", "120"] }] },
+          cashFlow: { periods: ["FY23", "FY24"], rows: [{ label: "Cash from Operating Activity", values: ["90", "110"] }] },
+        } as unknown as SourceDoc["structuredData"],
+      }),
+    );
+    const ev = await getEvidence(item({ id: "A8-01", outputFormat: "Ratio (cumulative)" }), "run1");
+    expect(ev.status).toBe("found");
+    expect(ev.structured?.["CFO/PAT (cumulative)"]).toBe("0.91"); // 200/220
+  });
+
+  it("extracts a whole NOTE by heading (section-aware retrieval) with its page", async () => {
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([
+      sd({
+        id: "ar1",
+        type: "ANNUAL_REPORT",
+        sourceUrl: "u",
+        name: "AR 2026",
+        extractedText:
+          "===== PAGE 210 =====\n" +
+          "Note 38. Contingent liabilities and commitments\n" +
+          "(a) Claims against the Company not acknowledged as debt: Rs 1,234 crore (PY Rs 1,100 crore).\n" +
+          "(b) Capital commitments: Rs 567 crore. Bank guarantees Rs 89 crore.\n",
+      }),
+    ]);
+    const ev = await getEvidence(item({ id: "A7a-13", outputFormat: "Trend" }), "run1");
+    expect(ev.status).toBe("found");
+    expect(ev.from).toBe("document");
+    expect(ev.passages?.[0].citation.page).toBe(210);
+    expect(ev.passages?.[0].text).toContain("Claims against the Company");
   });
 });

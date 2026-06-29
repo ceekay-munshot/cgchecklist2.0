@@ -161,7 +161,10 @@ export function summarize(
  * PARTIAL so the next run/day resumes. On full completion the run is DONE and
  * heavy document text is pruned.
  */
-export async function runAnalysis(runId: string): Promise<RunOutcome> {
+export async function runAnalysis(
+  runId: string,
+  opts: { force?: boolean } = {},
+): Promise<RunOutcome> {
   const run = await prisma.analysisRun.findUnique({ where: { id: runId } });
   if (!run) throw new Error(`run ${runId} not found`);
 
@@ -171,8 +174,10 @@ export async function runAnalysis(runId: string): Promise<RunOutcome> {
     prisma.itemResult.findMany({ where: { runId }, select: { itemId: true, status: true } }),
   ]);
 
+  // RESUMABLE by default (skip terminal items); --force re-evaluates ALL 106,
+  // ignoring prior status (so items judged under an older engine refresh).
   const terminalIds = new Set(existing.filter((r) => TERMINAL.has(r.status)).map((r) => r.itemId));
-  const todo = items.filter((i) => !terminalIds.has(i.id));
+  const todo = opts.force ? items : items.filter((i) => !terminalIds.has(i.id));
 
   await prisma.analysisRun.update({
     where: { id: runId },
@@ -268,7 +273,7 @@ export async function pruneRunText(runId: string): Promise<number> {
  * Process eligible runs (HARVESTED or PARTIAL) in creation order — once each per
  * drain. The next drain/day picks up any run still PARTIAL.
  */
-export async function drainQueue(opts?: { limit?: number }): Promise<RunOutcome[]> {
+export async function drainQueue(opts?: { limit?: number; force?: boolean }): Promise<RunOutcome[]> {
   const max = opts?.limit ?? Infinity;
   const runs = await prisma.analysisRun.findMany({
     where: { status: { in: ["HARVESTED", "PARTIAL"] } },
@@ -277,7 +282,7 @@ export async function drainQueue(opts?: { limit?: number }): Promise<RunOutcome[
   const outcomes: RunOutcome[] = [];
   for (const run of runs) {
     if (outcomes.length >= max) break;
-    outcomes.push(await runAnalysis(run.id));
+    outcomes.push(await runAnalysis(run.id, { force: opts?.force }));
   }
   return outcomes;
 }

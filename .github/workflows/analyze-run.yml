@@ -16,6 +16,11 @@ on:
         required: true
         default: TCS
         type: string
+      force:
+        description: "Re-evaluate ALL 106 items, ignoring prior DONE status (refresh after engine changes)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   analyze-run:
@@ -66,7 +71,13 @@ jobs:
       - name: Analyze ${{ inputs.ticker }} (all 106 items)
         env:
           TICKER: ${{ inputs.ticker }}
-        run: npm run analyze-run -- "$TICKER"
+          FORCE: ${{ inputs.force }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            npm run analyze-run -- "$TICKER" --force
+          else
+            npm run analyze-run -- "$TICKER"
+          fi
 
       - name: Upload analysis report
         if: always()

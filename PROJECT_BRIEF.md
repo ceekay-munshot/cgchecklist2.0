@@ -261,7 +261,8 @@ npm run db:seed      # prisma db seed (loads data/checklist.json)
 npm test             # vitest run
 npm run harvest -- <TICKER> [NSE|BSE]   # Phase-3 Screener harvest of one company
 npm run analyze -- <TICKER>             # Phase-4 analysis core on a company's latest run
-npm run analyze-run -- <TICKER|runId>   # Phase-5 FULL 106-item resumable batch (no arg = drain queue)
+npm run analyze-run -- <TICKER|runId>   # FULL 106-item resumable batch (no arg = drain queue)
+npm run analyze-run -- <TICKER> --force # re-evaluate ALL 106, ignoring prior DONE status
 ```
 
 Pages: `/` (dashboard), `/health` (provider statuses), `/api/health` (JSON).
@@ -388,6 +389,32 @@ batch for a run — `runAnalysis(runId)` evaluates every item via
 - **Queue drainer.** `drainQueue()` processes eligible runs (HARVESTED / PARTIAL)
   in order — the on-demand queue and the future daily-schedule entry point.
 
+**Done (Phase 6 — retrieval & analytical-quality overhaul):** a full TCS report
+exposed two problems — too much NOT_AVAILABLE that was *retrieval failure* (not
+missing data), and several WRONG flags from shallow single-keyword retrieval
+grabbing an off-topic passage. Fixes:
+- **More deterministic numerics (no LLM).** `lib/engine/numeric.ts` computes from
+  the harvested Tier-1 financials: CFO/PAT accruals (A8-01), CFO/EBITDA (A8-12),
+  effective tax rate (A8-10), debtor-days/>6m proxy (A8-03), cash-vs-accounting
+  EPS (A8-11), free float = 100 − promoter% (A3-06), plus D/E. Items whose
+  checklist bands are textual ("Near statutory", "Close"/"Wide gap") use a
+  dedicated deterministic classifier (`CUSTOM_NUMERIC`); the rest parse the bands.
+  Only NA if the series is genuinely absent.
+- **Note/section-aware document retrieval.** `getEvidence` FIRST locates the
+  relevant financial-statement NOTE / governance section by heading
+  (`EvidenceStrategy.sections`, e.g. "Contingent liabilities and commitments",
+  "Related party transactions", "Audit Committee") and extracts the whole note;
+  it falls back to keyword scoring only if no heading matches. A per-section
+  profile (`SECTION_PROFILE`) adds synonym/query expansion. Recovers A7a (CL), A5
+  (RPT), A2 (committees).
+- **Relevance gate.** Before judging, `analyzeItem` makes the model confirm the
+  passage is ACTUALLY about the item (not just a shared word); if not →
+  "not available" instead of a confident wrong flag. Fixes the A7a-13 / A6-03 /
+  A11-02 / A13-06 / A8-04 mis-retrieval cases.
+- **Force re-evaluation.** `runAnalysis(runId, { force })` / `npm run analyze-run
+  -- <ticker> --force` (and the `force` workflow input) re-evaluate ALL 106
+  ignoring prior status — so items judged under an older engine refresh.
+
 **Later phases:** `lib/export` (xlsx/pdf/pptx); a **daily schedule** for
 `analyze-run` (drain the queue under quota). (`lib/ingest` is now largely
 covered by `lib/harvest`.)
@@ -457,9 +484,11 @@ Run workflow → **ticker** (default `TCS`, or an `AnalysisRun` id). It
 `migrate deploy`s + seeds, runs all 106 items, and uploads
 **`analyze-run-<ticker>`** (`results.json` grouped by section + `summary.md`):
 per item flag/value/verdict/source, the per-section rollups, and the
-**non-negotiable gate**. Re-running **resumes** (DONE items skipped); under an
-exhausted quota it ends **PARTIAL** and the next run continues. Force a low cap
-to exercise the PARTIAL→resume path by setting `LLM_DAILY_CAP` in the job env.
+**non-negotiable gate**. Re-running **resumes** (DONE items skipped); the **force**
+input (or `--force` / `LLM` env) re-evaluates ALL 106 ignoring prior status (use
+after engine changes). Under an exhausted quota it ends **PARTIAL** and the next
+run continues. Force a low cap to exercise the PARTIAL→resume path by setting
+`LLM_DAILY_CAP` in the job env.
 **Required secrets:** `DATABASE_URL` + the LLM keys (`GROQ_API_KEY`,
 `MISTRAL_API_KEY`, `GEMINI_API_KEY`, optionally `NVIDIA_API_KEY`). It's
 `workflow_dispatch`-only; a daily `cron:` is a one-line add (noted in the file).

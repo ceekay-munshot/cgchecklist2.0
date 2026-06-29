@@ -119,11 +119,14 @@ async function writeReport(runId: string, outcome: RunOutcome) {
 }
 
 async function main() {
-  const arg = process.argv[2]?.trim();
+  const args = process.argv.slice(2).map((a) => a.trim());
+  // --force / --reset re-evaluates ALL 106 items, ignoring prior DONE status.
+  const force = args.includes("--force") || args.includes("--reset");
+  const arg = args.find((a) => a && !a.startsWith("--"));
 
   if (!arg) {
-    console.log("Draining queue (HARVESTED / PARTIAL runs)…");
-    const outcomes = await drainQueue();
+    console.log(`Draining queue (HARVESTED / PARTIAL runs)${force ? " [force]" : ""}…`);
+    const outcomes = await drainQueue({ force });
     if (!outcomes.length) console.log("No eligible runs.");
     for (const o of outcomes) {
       console.log(`run ${o.runId}: ${o.status} (done=${o.summary.itemsDone}/${o.summary.itemsTotal}, deferred=${o.deferred})`);
@@ -140,8 +143,8 @@ async function main() {
     return;
   }
 
-  console.log(`Analyzing run ${runId} …`);
-  const outcome = await runAnalysis(runId);
+  console.log(`Analyzing run ${runId}${force ? " [force re-eval]" : ""} …`);
+  const outcome = await runAnalysis(runId, { force });
   console.log(
     `status=${outcome.status}  done=${outcome.summary.itemsDone}/${outcome.summary.itemsTotal}  ` +
       `reds=${outcome.summary.totalReds}  deferred=${outcome.deferred}  pruned=${outcome.pruned}  ` +

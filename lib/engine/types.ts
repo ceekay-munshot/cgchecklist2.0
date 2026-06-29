@@ -51,11 +51,24 @@ export function kindOf(item: EngineItem): ItemKind {
 /** Where an item's evidence comes from. */
 export type EvidenceFrom = "screener" | "document" | "web";
 
+/**
+ * Numeric values COMPUTED deterministically from the Tier-1 structuredData
+ * (financials we already harvested) — no LLM. See `lib/engine/numeric.ts`.
+ */
+export type ComputedNumericKind =
+  | "debtToEquity" // Borrowings ÷ (Equity + Reserves)
+  | "cfoToPat" // cumulative CFO ÷ PAT (accruals / cash backing)
+  | "cfoToEbitda" // latest CFO ÷ Operating Profit (cash conversion)
+  | "taxRate" // effective tax rate (P&L Tax %)
+  | "receivableDaysProxy" // debtor days (DSO) — proxy for >6-month ageing
+  | "cashEpsRatio" // (PAT + Depreciation) ÷ PAT — cash vs accounting EPS
+  | "freeFloat"; // 100 − promoter holding %
+
 /** A Tier-1 structured field to read from the SCREENER_PAGE structuredData. */
 export type ScreenerField =
   | { kind: "ratio"; match: RegExp; label: string }
-  | { kind: "debtToEquity"; label: string }
-  | { kind: "shareholding"; series: "promoters" | "pledged"; label: string };
+  | { kind: "shareholding"; series: "promoters" | "pledged"; label: string }
+  | { kind: ComputedNumericKind; label: string };
 
 export interface EvidenceStrategy {
   from: EvidenceFrom;
@@ -63,6 +76,12 @@ export interface EvidenceStrategy {
   screenerFields?: ScreenerField[];
   /** "document": which SourceDoc types to search, and the keywords to match. */
   docTypes?: SourceDocType[];
+  /**
+   * "document": financial-statement NOTE / governance section headings to locate
+   * and extract whole (preferred over keyword scoring; e.g. "Contingent
+   * liabilities and commitments", "Related party transactions", "Audit Committee").
+   */
+  sections?: string[];
   keywords?: string[];
   /** Allow a web fallback when the primary (document) source yields nothing. */
   webFallback?: boolean;

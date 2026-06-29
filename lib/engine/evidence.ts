@@ -1,11 +1,8 @@
 import type { Company, SourceDoc, SourceDocType } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
-import type {
-  PeriodTable,
-  ScreenerStructuredData,
-  ShareholdingTable,
-} from "@/lib/harvest/types";
+import type { ScreenerStructuredData } from "@/lib/harvest/types";
+import { computeNumeric, findRatio, getShareholdingSeries } from "./numeric";
 import {
   kindOf,
   type EngineItem,
@@ -21,16 +18,22 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-item evidence strategies for the items this phase validates. Routing is by
- * item, not purely by kind, because some NUMERIC items (e.g. board independence)
- * must be read from a document, not from the Tier-1 Screener page.
+ * Per-item evidence strategies. Routing is by item, not purely by kind, because
+ * some NUMERIC items (e.g. board independence) come from a document, and many
+ * NUMERIC items are COMPUTED from the Tier-1 financials (no LLM).
  */
 const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
-  // Tier-1 numeric (Screener structuredData)
+  // Tier-1 numeric — read or computed from structuredData (no LLM)
   "A14-01": { from: "screener", screenerFields: [{ kind: "debtToEquity", label: "Debt to equity" }] },
   "A3-02": { from: "screener", screenerFields: [{ kind: "shareholding", series: "pledged", label: "Pledged %" }] },
   "A3-01": { from: "screener", screenerFields: [{ kind: "shareholding", series: "promoters", label: "Promoter holding %" }] },
-  // Numeric-from-document
+  "A3-06": { from: "screener", screenerFields: [{ kind: "freeFloat", label: "Free float" }] },
+  "A8-01": { from: "screener", screenerFields: [{ kind: "cfoToPat", label: "CFO/PAT (cumulative)" }] },
+  "A8-12": { from: "screener", screenerFields: [{ kind: "cfoToEbitda", label: "CFO/EBITDA" }] },
+  "A8-10": { from: "screener", screenerFields: [{ kind: "taxRate", label: "Effective tax rate" }] },
+  "A8-03": { from: "screener", screenerFields: [{ kind: "receivableDaysProxy", label: "Debtor days" }] },
+  "A8-11": { from: "screener", screenerFields: [{ kind: "cashEpsRatio", label: "Cash EPS / EPS" }] },
+  // Numeric-from-document (keyword retrieval — already validated correct)
   "A1-01": {
     from: "document",
     docTypes: ["ANNUAL_REPORT"],
@@ -43,7 +46,7 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
       "woman director",
     ],
   },
-  // Qualitative-from-document
+  // Qualitative-from-document (keyword retrieval — already validated correct)
   "A4-01": {
     from: "document",
     docTypes: ["ANNUAL_REPORT"],
@@ -63,6 +66,42 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
     keywords: ["managing director", "chief executive", "capital allocation", "md & ceo", "return on capital"],
     webFallback: true,
     webQuery: "CEO capital allocation track record",
+  },
+};
+
+/**
+ * Per-SECTION note/section headings + synonym keywords for document items, so
+ * every item in a section gets note-aware retrieval (locate the right note first)
+ * and terminology coverage — not just shallow single-keyword search.
+ */
+const SECTION_PROFILE: Record<string, { sections?: string[]; keywords?: string[]; docTypes?: SourceDocType[] }> = {
+  A2: {
+    sections: ["audit committee", "nomination and remuneration committee", "stakeholders relationship committee", "corporate social responsibility committee", "risk management committee", "composition of the committees"],
+    keywords: ["committee", "independent", "meetings held", "attendance", "chairperson", "constituted"],
+  },
+  A5: {
+    sections: ["related party transactions", "related party disclosures", "transactions with related parties"],
+    keywords: ["related party", "related parties", "arm's length", "key managerial personnel", "ordinary course of business", "subsidiaries"],
+  },
+  A6: {
+    sections: ["nomination and remuneration policy", "remuneration of directors", "managerial remuneration", "remuneration to key managerial"],
+    keywords: ["remuneration", "commission", "variable pay", "performance linked", "perquisites", "sitting fees"],
+  },
+  A7a: {
+    sections: ["contingent liabilities and commitments", "contingent liabilities", "commitments"],
+    keywords: ["contingent", "guarantee", "claims not acknowledged as debt", "commitments", "disputed", "demand"],
+  },
+  A8: {
+    sections: ["material accounting policies", "significant accounting policies", "property, plant and equipment", "intangible assets", "revenue recognition"],
+    keywords: ["capitalis", "capitaliz", "accounting policy", "amortis", "depreciation", "revenue is recognised"],
+  },
+  A11: {
+    sections: ["investment in subsidiaries", "subsidiaries", "cash and cash equivalents", "investments"],
+    keywords: ["subsidiary", "subsidiaries", "dividend received", "cash and bank", "investment in", "step-down"],
+  },
+  A13: {
+    sections: ["board of directors", "directors' report", "management discussion and analysis"],
+    keywords: ["promoter", "family", "succession", "managing director", "founder", "chairman"],
   },
 };
 
@@ -88,15 +127,15 @@ function defaultStrategy(item: EngineItem): EvidenceStrategy {
       .sort((a, b) => b.length - a.length)[0];
     return {
       from: "screener",
-      screenerFields: longest
-        ? [{ kind: "ratio", match: new RegExp(longest, "i"), label: item.item }]
-        : [],
+      screenerFields: longest ? [{ kind: "ratio", match: new RegExp(longest, "i"), label: item.item }] : [],
     };
   }
+  const profile = SECTION_PROFILE[item.sectionCode];
   return {
     from: "document",
-    docTypes: defaultDocTypesForSection(item.sectionCode),
-    keywords: keywordsFromItem(item),
+    docTypes: profile?.docTypes ?? defaultDocTypesForSection(item.sectionCode),
+    sections: profile?.sections,
+    keywords: Array.from(new Set([...(profile?.keywords ?? []), ...keywordsFromItem(item)])).slice(0, 12),
   };
 }
 
@@ -130,16 +169,21 @@ export async function getEvidence(item: EngineItem, runId: string): Promise<Evid
 }
 
 async function loadCompany(runId: string): Promise<Company | null> {
-  const run = await prisma.analysisRun.findUnique({
-    where: { id: runId },
-    include: { company: true },
-  });
+  const run = await prisma.analysisRun.findUnique({ where: { id: runId }, include: { company: true } });
   return run?.company ?? null;
 }
 
 // ---------------------------------------------------------------------------
-// Tier-1: structured Screener evidence
+// Tier-1: structured Screener evidence (read or computed; no LLM)
 // ---------------------------------------------------------------------------
+
+function latestNonNull(values: Array<string | null>): string | null {
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i];
+    if (v != null && v.trim() !== "") return v.trim();
+  }
+  return null;
+}
 
 async function getScreenerEvidence(
   runId: string,
@@ -170,12 +214,6 @@ async function getScreenerEvidence(
     if (field.kind === "ratio") {
       const v = findRatio(data, field.match);
       if (v != null) structured[field.label] = v;
-    } else if (field.kind === "debtToEquity") {
-      const de = computeDebtToEquity(data);
-      if (de) {
-        structured[field.label] = de.value;
-        if (de.note) notes.push(de.note);
-      }
     } else if (field.kind === "shareholding") {
       const s = getShareholdingSeries(data, field.series);
       if (s) {
@@ -183,122 +221,30 @@ async function getScreenerEvidence(
         if (latest != null) structured[field.label] = latest;
         series = { label: field.label, periods: s.periods, values: s.values };
       }
+    } else {
+      // computed-from-financials numeric kind
+      const c = computeNumeric(data, field.kind);
+      if (c) {
+        structured[field.label] = c.value;
+        if (c.note) notes.push(c.note);
+      }
     }
   }
 
   if (Object.keys(structured).length === 0) {
     return { status: "not_available", from: "screener", kind, note: "structured field(s) not present on the Screener page" };
   }
-  return {
-    status: "found",
-    from: "screener",
-    kind,
-    structured,
-    series,
-    citation,
-    note: notes.join("; ") || undefined,
-  };
-}
-
-function findRatio(data: ScreenerStructuredData, match: RegExp): string | null {
-  for (const [k, v] of Object.entries(data.ratios ?? {})) {
-    if (match.test(k) && v) return v;
-  }
-  // also look in the ratios table (latest period)
-  const rowVal = latestRowValue(data.ratiosTable, match);
-  return rowVal;
-}
-
-/** D/E from the ratios first; otherwise computed from the latest balance-sheet period. */
-function computeDebtToEquity(
-  data: ScreenerStructuredData,
-): { value: string; note?: string } | null {
-  const re = /debt\s*to\s*equity|d\/e/i;
-  const direct = findRatio(data, re);
-  if (direct != null) return { value: direct, note: "from Screener ratios" };
-
-  const bs = data.balanceSheet;
-  if (!bs) return null;
-  const idx = latestColumnIndex(bs, /borrowing/i);
-  if (idx < 0) return null;
-  const borrowings = numAt(bs, /borrowing/i, idx);
-  const equityCapital = numAt(bs, /equity (share )?capital|share capital/i, idx);
-  const reserves = numAt(bs, /reserve/i, idx);
-  if (borrowings == null || equityCapital == null || reserves == null) return null;
-  const equity = equityCapital + reserves;
-  if (equity <= 0) return null;
-  const de = borrowings / equity;
-  return {
-    value: de.toFixed(2),
-    note: `computed from balance sheet (${bs.periods[idx] ?? "latest"}): Borrowings ${borrowings} / (Equity ${equityCapital} + Reserves ${reserves})`,
-  };
-}
-
-function getShareholdingSeries(
-  data: ScreenerStructuredData,
-  which: "promoters" | "pledged",
-): { periods: string[]; values: Array<string | null> } | null {
-  const sh: ShareholdingTable | undefined = data.shareholding;
-  if (!sh) return null;
-  const direct = which === "promoters" ? sh.promoters : sh.pledged;
-  if (direct && direct.length) return { periods: sh.periods, values: direct };
-  // fall back to a matching row
-  const re = which === "promoters" ? /promoter/i : /pledge/i;
-  const row = sh.rows?.find((r) => re.test(r.label));
-  if (row) return { periods: sh.periods, values: row.values };
-  return null;
-}
-
-// ---- small structured-table helpers ----
-
-function parseScreenerNumber(s: string | null | undefined): number | null {
-  if (s == null) return null;
-  const cleaned = s.replace(/[,₹%]/g, "").replace(/\s+/g, "").trim();
-  if (!cleaned || cleaned === "-") return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-
-function latestNonNull(values: Array<string | null>): string | null {
-  for (let i = values.length - 1; i >= 0; i--) {
-    const v = values[i];
-    if (v != null && v.trim() !== "") return v.trim();
-  }
-  return null;
-}
-
-function rowFor(table: PeriodTable | undefined, match: RegExp) {
-  return table?.rows.find((r) => match.test(r.label));
-}
-
-function latestRowValue(table: PeriodTable | undefined, match: RegExp): string | null {
-  const row = rowFor(table, match);
-  return row ? latestNonNull(row.values) : null;
-}
-
-/** Index of the latest period column where the matched row has a numeric value. */
-function latestColumnIndex(table: PeriodTable, match: RegExp): number {
-  const row = rowFor(table, match);
-  if (!row) return -1;
-  for (let i = row.values.length - 1; i >= 0; i--) {
-    if (parseScreenerNumber(row.values[i]) != null) return i;
-  }
-  return -1;
-}
-
-function numAt(table: PeriodTable, match: RegExp, idx: number): number | null {
-  const row = rowFor(table, match);
-  if (!row) return null;
-  return parseScreenerNumber(row.values[idx]);
+  return { status: "found", from: "screener", kind, structured, series, citation, note: notes.join("; ") || undefined };
 }
 
 // ---------------------------------------------------------------------------
-// Tier-2: document passage retrieval
+// Tier-2: document retrieval — note/section-aware, with keyword fallback
 // ---------------------------------------------------------------------------
 
 const MAX_PASSAGES = 4;
-const MAX_EVIDENCE_CHARS = 6000;
+const MAX_EVIDENCE_CHARS = 6500;
 const PER_PASSAGE_CHARS = 1800;
+const SECTION_CHARS = 4500; // window extracted for a located note/section
 
 async function getDocumentEvidence(
   runId: string,
@@ -306,22 +252,80 @@ async function getDocumentEvidence(
   kind: ItemKind,
 ): Promise<Evidence> {
   const docs = await prisma.sourceDoc.findMany({
-    where: {
-      runId,
-      type: { in: strategy.docTypes ?? [] },
-      fetchStatus: "OK",
-      extractedText: { not: null },
-    },
+    where: { runId, type: { in: strategy.docTypes ?? [] }, fetchStatus: "OK", extractedText: { not: null } },
     orderBy: { createdAt: "asc" }, // harvester stores most-recent first
   });
   if (!docs.length) {
     return { status: "not_available", from: "document", kind, note: "no documents with extracted text" };
   }
-  const passages = retrievePassages(docs, strategy.keywords ?? []);
+
+  // 1) Note/section-aware: locate the relevant heading and extract the whole note.
+  let passages: EvidencePassage[] = strategy.sections?.length
+    ? extractSectionPassages(docs, strategy.sections)
+    : [];
+  // 2) Fall back to keyword scoring when no heading matched.
   if (!passages.length) {
-    return { status: "not_available", from: "document", kind, note: "no passages matched the keywords" };
+    passages = retrievePassages(docs, strategy.keywords ?? []);
+  }
+  if (!passages.length) {
+    return { status: "not_available", from: "document", kind, note: "no matching note/section or keyword passages" };
   }
   return { status: "found", from: "document", kind, passages, citation: passages[0].citation };
+}
+
+/** The most note-like occurrence of a heading (its following window is digit-dense, unlike a TOC line). */
+function bestHeadingOffset(lower: string, heading: string): number {
+  let best = -1;
+  let bestScore = -1;
+  let from = 0;
+  for (;;) {
+    const i = lower.indexOf(heading, from);
+    if (i < 0) break;
+    const window = lower.slice(i + heading.length, i + heading.length + 1200);
+    const digits = (window.match(/\d/g) ?? []).length;
+    if (digits > bestScore) {
+      bestScore = digits;
+      best = i;
+    }
+    from = i + heading.length;
+  }
+  return best;
+}
+
+function pageAtOffset(text: string, offset: number): number | null {
+  const re = /=====\s*PAGE\s+(\d+)\s*=====/g;
+  let page: number | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index <= offset) page = Number(m[1]);
+    else break;
+  }
+  return page;
+}
+
+/** Locate each note/section heading and extract its whole body (token-budgeted). */
+function extractSectionPassages(docs: SourceDoc[], headings: string[]): EvidencePassage[] {
+  const out: EvidencePassage[] = [];
+  let budget = MAX_EVIDENCE_CHARS;
+  for (const doc of docs) {
+    const text = doc.extractedText ?? "";
+    if (!text) continue;
+    const lower = text.toLowerCase();
+    for (const heading of headings) {
+      if (out.length >= MAX_PASSAGES || budget <= 0) break;
+      const at = bestHeadingOffset(lower, heading.toLowerCase());
+      if (at < 0) continue;
+      const body = text.slice(at, at + SECTION_CHARS).trim().slice(0, budget);
+      if (!body) continue;
+      budget -= body.length;
+      out.push({
+        text: body,
+        citation: { sourceDocId: doc.id, sourceUrl: doc.sourceUrl, page: pageAtOffset(text, at), docType: doc.type, docName: doc.name },
+      });
+    }
+    if (out.length >= MAX_PASSAGES || budget <= 0) break;
+  }
+  return out;
 }
 
 interface PageChunk {
@@ -379,7 +383,7 @@ function countHits(haystackLower: string, kws: string[]): number {
   return n;
 }
 
-/** Keyword-score page chunks across docs and return the top passages (token-thrifty). */
+/** Keyword-score page chunks across docs and return the top passages (fallback path). */
 function retrievePassages(docs: SourceDoc[], keywords: string[]): EvidencePassage[] {
   const kws = keywords.map((k) => k.toLowerCase()).filter(Boolean);
   if (!kws.length) return [];
@@ -402,13 +406,7 @@ function retrievePassages(docs: SourceDoc[], keywords: string[]): EvidencePassag
     budget -= text.length;
     passages.push({
       text,
-      citation: {
-        sourceDocId: s.doc.id,
-        sourceUrl: s.doc.sourceUrl,
-        page: s.chunk.page,
-        docType: s.doc.type,
-        docName: s.doc.name,
-      },
+      citation: { sourceDocId: s.doc.id, sourceUrl: s.doc.sourceUrl, page: s.chunk.page, docType: s.doc.type, docName: s.doc.name },
     });
   }
   return passages;
