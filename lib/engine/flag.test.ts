@@ -74,14 +74,92 @@ describe("assignFlag", () => {
     expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
   });
 
-  it("note item (numeric format) is JUDGED qualitatively, not numeric-parsed", async () => {
-    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "Small, mostly winnable disputes." });
+  it("amount item (A7a-03): classified by MATERIALITY vs company size, no LLM", async () => {
     const r = await assignFlag(
       item({ id: "A7a-03", outputFormat: "₹ / % NW", greenFlag: "Small, mostly winnable", redFlag: "Large / repeated losses" }),
-      { value: "Income-tax disputes ~Rs 1,234 cr, described as mostly winnable", confidence: "medium" },
+      { value: "Income-tax disputes ~Rs 1,234 cr", confidence: "medium" },
+      { scale: { netWorth: 95_000, revenue: 240_000, pat: 49_000 } },
     );
-    expect(r.flag).toBe("GREEN"); // judged, not classifyNumeric on "1,234"
-    expect(asMock(llm.reasoning.completeJSON)).toHaveBeenCalledTimes(1);
+    expect(r.flag).toBe("GREEN"); // ₹1,234cr ≈ 1.3% of net worth → immaterial
+    expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
+  });
+});
+
+const TCS_SCALE = { netWorth: 95_000, revenue: 240_000, pat: 49_000 };
+
+describe("materiality — amount-based reds fire only when material (Phase 8)", () => {
+  it("A7a-06: an immaterial ₹226cr subsidiary guarantee is GREEN, not RED — no LLM", async () => {
+    const r = await assignFlag(
+      item({ id: "A7a-06", outputFormat: "% net worth", greenFlag: "Nil/minimal", redFlag: "Large guarantees" }),
+      { value: "Corporate guarantees given: $25 million (equivalent to Rs 226 crore)", confidence: "medium" },
+      { scale: TCS_SCALE },
+    );
+    expect(r.flag).toBe("GREEN"); // 226 / 95,000 ≈ 0.24%
+    expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
+  });
+
+  it("A5-02: royalty at ~0.15% of revenue is GREEN, not RED", async () => {
+    const r = await assignFlag(
+      item({ id: "A5-02", outputFormat: "% of sales", greenFlag: "Nil or <1%", redFlag: ">2–3% sales" }),
+      { value: "Royalty/brand fees of Rs 368 crore for FY2026", confidence: "medium" },
+      { scale: TCS_SCALE },
+    );
+    expect(r.flag).toBe("GREEN"); // 368 / 240,000 ≈ 0.15%
+  });
+
+  it("A7a-06: a genuinely MATERIAL guarantee (>25% NW) still fires RED", async () => {
+    const r = await assignFlag(
+      item({ id: "A7a-06", outputFormat: "% net worth", greenFlag: "Nil/minimal", redFlag: "Large guarantees" }),
+      { value: "Corporate guarantees given: Rs 40,000 crore", confidence: "medium" },
+      { scale: TCS_SCALE },
+    );
+    expect(r.flag).toBe("RED"); // 40,000 / 95,000 ≈ 42% ≥ 25%
+  });
+
+  it("A5-04 SANITY: an implausibly large RPT figure is distrusted → NEUTRAL, never a red", async () => {
+    const r = await assignFlag(
+      item({ id: "A5-04", outputFormat: "%", greenFlag: "Minimal", redFlag: "Significant promoter routing" }),
+      { value: "Promoter-vendor purchases of Rs 500,000 crore", confidence: "medium" },
+      { scale: TCS_SCALE },
+    );
+    expect(r.flag).toBe("NEUTRAL"); // 500,000cr > 1.5× revenue → mis-extraction
+  });
+
+  it("without company scale, an amount item cannot confirm materiality → NEUTRAL (never a confident red)", async () => {
+    const r = await assignFlag(
+      item({ id: "A7a-06", outputFormat: "% net worth", greenFlag: "Nil/minimal", redFlag: "Large guarantees" }),
+      { value: "Corporate guarantees given: Rs 226 crore", confidence: "medium" },
+    );
+    expect(r.flag).toBe("NEUTRAL");
+  });
+
+  it("guard: a trend item (A7a-13) judged RED on an immaterial figure is downgraded to NEUTRAL", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Rising additions." });
+    const r = await assignFlag(
+      item({ id: "A7a-13", outputFormat: "Trend", greenFlag: "Reversed/favourable", redFlag: "Rising additions" }),
+      { value: "A corporate guarantee of Rs 226 crore was added", confidence: "medium" },
+      { scale: TCS_SCALE },
+    );
+    expect(r.flag).toBe("NEUTRAL"); // 226cr ≈ 0.24% NW → immaterial → not a material movement
+  });
+});
+
+describe("categorical compliance — A2-01 audit committee (Phase 8)", () => {
+  it("a SEBI-compliant committee (75% independent, 3 of 4) is GREEN, not RED — no LLM", async () => {
+    const r = await assignFlag(
+      item({ id: "A2-01", outputFormat: "Yes/No + count", greenFlag: "100% independent, ≥4 meetings", redFlag: "Non-independent members / <4 meetings" }),
+      { value: "Audit Committee independence: 75% (3 out of 4 members)", confidence: "medium" },
+    );
+    expect(r.flag).toBe("GREEN"); // ≥2/3 independent
+    expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
+  });
+
+  it("a non-compliant committee (1 of 4 independent) is RED", async () => {
+    const r = await assignFlag(
+      item({ id: "A2-01", outputFormat: "Yes/No + count", greenFlag: "100% independent", redFlag: "Non-independent members" }),
+      { value: "Audit committee has 1 of 4 independent members", confidence: "medium" },
+    );
+    expect(r.flag).toBe("RED"); // not majority-independent
   });
 });
 

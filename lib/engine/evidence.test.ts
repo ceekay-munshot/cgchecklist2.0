@@ -70,6 +70,16 @@ describe("evidenceStrategyFor — routing per item", () => {
     // a non-note document item is NOT flagged for Gemini note reading
     expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).useGeminiNote).toBeFalsy();
   });
+  it("marks web/market-data items (overboarding, attendance, attrition, …) as expected-NA with a web fallback", () => {
+    for (const id of ["A1-06", "A1-07", "A12-01", "A15-03", "A3-07", "A9-01"]) {
+      const s = evidenceStrategyFor(item({ id, outputFormat: "Count" }));
+      expect(s.expectedNa).toBe(true);
+      expect(s.webFallback).toBe(true);
+      expect(s.webQuery).toBeTruthy();
+    }
+    // a normal filing item is NOT marked expected-NA
+    expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).expectedNa).toBeFalsy();
+  });
 });
 
 describe("getEvidence", () => {

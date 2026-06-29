@@ -94,6 +94,13 @@ export interface EvidenceStrategy {
   webFallback?: boolean;
   /** Extra query terms for the web fallback (combined with the company name). */
   webQuery?: string;
+  /**
+   * This item is generally NOT disclosed in filings (overboarding, attendance,
+   * attrition, research/analyst coverage, marquee-investor moves, SEBI history) —
+   * it lives in web/market data. A NA here is EXPECTED (an honest gap), not a
+   * retrieval failure, and is labelled as such in the verdict.
+   */
+  expectedNa?: boolean;
 }
 
 export interface EvidenceCitation {

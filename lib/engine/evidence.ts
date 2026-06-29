@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
 import { computeNumeric, findRatio, getShareholdingSeries } from "./numeric";
+import { companyScaleFrom, type CompanyScale } from "./materiality";
 import {
   kindOf,
   type EngineItem,
@@ -115,6 +116,22 @@ const SECTION_PROFILE: Record<
   },
 };
 
+/**
+ * Items generally absent from filings — they live in web / market data
+ * (overboarding, board attendance, employee attrition, analyst/research
+ * coverage, marquee-investor entry/exit, SEBI enforcement history). They try the
+ * document then a web fallback; a NA here is EXPECTED and labelled as such, not a
+ * silent retrieval failure.
+ */
+export const WEB_ONLY_ITEMS: Record<string, string> = {
+  "A1-06": "directors number of other listed company board seats overboarding",
+  "A1-07": "board meeting attendance record of directors",
+  "A12-01": "employee attrition rate",
+  "A15-03": "analyst research coverage brokerages",
+  "A3-07": "marquee institutional investor stake entry exit",
+  "A9-01": "SEBI order penalty consent order insider trading",
+};
+
 function defaultDocTypesForSection(sectionCode: string): SourceDocType[] {
   if (sectionCode === "A13") return ["EARNINGS_PDF", "ANNUAL_REPORT"];
   if (sectionCode === "A7") return ["EARNINGS_PDF", "ANNUAL_REPORT"];
@@ -162,7 +179,14 @@ function defaultStrategy(item: EngineItem): EvidenceStrategy {
 
 /** Pure routing function — pick where an item's evidence comes from. */
 export function evidenceStrategyFor(item: EngineItem): EvidenceStrategy {
-  return STRATEGY_BY_ID[item.id] ?? defaultStrategy(item);
+  const base = STRATEGY_BY_ID[item.id] ?? defaultStrategy(item);
+  // Web/market-data items: try the document, then web; an empty result is an
+  // EXPECTED NA (honest gap), not a failure.
+  const webQuery = WEB_ONLY_ITEMS[item.id];
+  if (webQuery && !base.expectedNa) {
+    return { ...base, webFallback: true, webQuery: base.webQuery ?? webQuery, expectedNa: true };
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +216,31 @@ export async function getEvidence(item: EngineItem, runId: string): Promise<Evid
 async function loadCompany(runId: string): Promise<Company | null> {
   const run = await prisma.analysisRun.findUnique({ where: { id: runId }, include: { company: true } });
   return run?.company ?? null;
+}
+
+// Company size (₹ crore) for materiality scaling — read once per run from the
+// Tier-1 SCREENER_PAGE and memoised (it does not change within a run).
+const scaleCache = new Map<string, Promise<CompanyScale | null>>();
+
+/** Reset the per-run company-scale cache (tests). */
+export function resetCompanyScaleCache(): void {
+  scaleCache.clear();
+}
+
+/** The company's net worth / revenue / PAT from Tier-1 structuredData, or null. */
+export function loadCompanyScale(runId: string): Promise<CompanyScale | null> {
+  const cached = scaleCache.get(runId);
+  if (cached) return cached;
+  const p = (async () => {
+    const page = await prisma.sourceDoc.findFirst({
+      where: { runId, type: "SCREENER_PAGE", fetchStatus: "OK" },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!page?.structuredData) return null;
+    return companyScaleFrom(page.structuredData as unknown as ScreenerStructuredData);
+  })();
+  scaleCache.set(runId, p);
+  return p;
 }
 
 // ---------------------------------------------------------------------------
