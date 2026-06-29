@@ -15,6 +15,18 @@ const CONCURRENCY = Number(process.env.ANALYZE_CONCURRENCY) || 2;
 /** Statuses that are terminal for a pass — skipped on re-run. */
 const TERMINAL = new Set(["DONE", "NEEDS_REVIEW"]);
 
+/**
+ * A result is COMMITTED when its status is terminal (DONE / NEEDS_REVIEW): the
+ * current engine produced and stands behind its flag. Non-terminal items
+ * (DEFERRED / ERROR / PENDING) may still carry a STALE flag from an earlier
+ * pass (the `flag` column is not cleared on defer), so their flag must NOT be
+ * counted in tallies, the non-negotiable gate, or reported as a fresh verdict.
+ * Single source of truth shared by summarize() and the report writer.
+ */
+export function isCommitted(status: string | null | undefined): boolean {
+  return status != null && TERMINAL.has(status);
+}
+
 // ---------------------------------------------------------------------------
 // Summary + non-negotiable gate (pure)
 // ---------------------------------------------------------------------------
@@ -109,11 +121,9 @@ export function summarize(
 
     // Only COMMITTED items (terminal status) contribute their flag to the tally
     // and the non-negotiable gate. A DEFERRED/ERROR/PENDING item may still carry
-    // a STALE flag from an earlier pass (the `flag` column is not cleared on
-    // defer); counting it would inflate the buckets and could pass/fail the gate
-    // on data the current engine never re-confirmed.
-    const committed = r?.status === "DONE" || r?.status === "NEEDS_REVIEW";
-    if (committed) {
+    // a STALE flag from an earlier pass; counting it would inflate the buckets
+    // and could pass/fail the gate on data the current engine never re-confirmed.
+    if (isCommitted(r?.status)) {
       switch (r?.flag) {
         case "GREEN":
           sec.green++;

@@ -11,7 +11,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/engine/evaluateItem", () => ({ evaluateItem: vi.fn() }));
 
-import { runAnalysis, summarize } from "./run";
+import { runAnalysis, summarize, isCommitted } from "./run";
 import { prisma } from "@/lib/db";
 import { evaluateItem } from "@/lib/engine/evaluateItem";
 import { QuotaExhaustedError } from "@/lib/engine/quota";
@@ -190,5 +190,20 @@ describe("summarize + non-negotiable gate", () => {
     expect(s.itemsDone).toBe(1);
     expect(s.itemsDeferred).toBe(2);
     expect(s.complete).toBe(false);
+  });
+});
+
+describe("isCommitted — shared staleness predicate", () => {
+  it("is true only for terminal statuses (DONE / NEEDS_REVIEW)", () => {
+    expect(isCommitted("DONE")).toBe(true);
+    expect(isCommitted("NEEDS_REVIEW")).toBe(true);
+  });
+  it("is false for non-terminal or missing statuses (so leftover flags stay stale)", () => {
+    expect(isCommitted("DEFERRED")).toBe(false);
+    expect(isCommitted("ERROR")).toBe(false);
+    expect(isCommitted("PENDING")).toBe(false);
+    expect(isCommitted("PROCESSING")).toBe(false);
+    expect(isCommitted(null)).toBe(false);
+    expect(isCommitted(undefined)).toBe(false);
   });
 });
