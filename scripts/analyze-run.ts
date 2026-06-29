@@ -116,6 +116,10 @@ async function writeReport(runId: string, outcome: RunOutcome) {
   const md = lines.join("\n");
   fs.writeFileSync(path.join(OUT_DIR, "summary.md"), md + "\n");
   appendStepSummary(md);
+  // Also emit to stdout so the full per-item breakdown is visible in the job log
+  // (the uploaded artifact lives behind storage egress that CI consumers/tools
+  // can't always reach).
+  console.log("\n" + md);
 }
 
 async function main() {
