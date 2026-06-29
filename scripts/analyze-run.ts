@@ -109,7 +109,14 @@ async function writeReport(runId: string, outcome: RunOutcome) {
     lines.push(`### ${g.code} — ${g.name}`);
     for (const it of g.items) {
       const src = it.source.url ? ` _(src: ${it.source.url}${it.source.page != null ? ` p.${it.source.page}` : ""})_` : "";
-      lines.push(`- **${it.id}** ${it.flag ?? it.status}: ${it.item} — ${it.value ?? "—"}${src}`);
+      // Show the committed flag only for terminal items. A non-terminal item that
+      // still carries a flag from an earlier pass is marked "stale" so a PARTIAL
+      // run's report can't be misread as a fresh verdict for every line.
+      const committed = it.status === "DONE" || it.status === "NEEDS_REVIEW";
+      const statusTag = committed
+        ? (it.flag ?? it.status)
+        : `${it.status}${it.flag ? ` (stale ${it.flag})` : ""}`;
+      lines.push(`- **${it.id}** ${statusTag}: ${it.item} — ${it.value ?? "—"}${src}`);
     }
     lines.push("");
   }

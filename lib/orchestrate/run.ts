@@ -107,27 +107,35 @@ export function summarize(
         itemsPending++;
     }
 
-    switch (r?.flag) {
-      case "GREEN":
-        sec.green++;
-        totals.green++;
-        break;
-      case "RED":
-        sec.red++;
-        totals.red++;
-        totalReds++;
-        if (it.isNonNegotiable) failedItems.push(it.id);
-        break;
-      case "NEUTRAL":
-        sec.neutral++;
-        totals.neutral++;
-        break;
-      case "NOT_AVAILABLE":
-        sec.na++;
-        totals.na++;
-        break;
-      default:
-        break; // unprocessed — counted via itemsPending, not a flag bucket
+    // Only COMMITTED items (terminal status) contribute their flag to the tally
+    // and the non-negotiable gate. A DEFERRED/ERROR/PENDING item may still carry
+    // a STALE flag from an earlier pass (the `flag` column is not cleared on
+    // defer); counting it would inflate the buckets and could pass/fail the gate
+    // on data the current engine never re-confirmed.
+    const committed = r?.status === "DONE" || r?.status === "NEEDS_REVIEW";
+    if (committed) {
+      switch (r?.flag) {
+        case "GREEN":
+          sec.green++;
+          totals.green++;
+          break;
+        case "RED":
+          sec.red++;
+          totals.red++;
+          totalReds++;
+          if (it.isNonNegotiable) failedItems.push(it.id);
+          break;
+        case "NEUTRAL":
+          sec.neutral++;
+          totals.neutral++;
+          break;
+        case "NOT_AVAILABLE":
+          sec.na++;
+          totals.na++;
+          break;
+        default:
+          break; // committed but flagless (shouldn't happen) — no bucket
+      }
     }
   }
 

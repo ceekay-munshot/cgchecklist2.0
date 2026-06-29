@@ -165,4 +165,30 @@ describe("summarize + non-negotiable gate", () => {
     expect(s.itemsDeferred).toBe(1);
     expect(s.nonNegotiable.gatePass).toBe(true); // no reds → gate passes (vacuously)
   });
+
+  it("REPORTING HONESTY: a STALE flag on a non-terminal item is NOT counted (buckets or gate)", () => {
+    const items = [
+      { id: "A1-01", sectionCode: "A1", isNonNegotiable: false }, // fresh DONE GREEN
+      { id: "A1-02", sectionCode: "A1", isNonNegotiable: true }, // DEFERRED but carries a stale RED
+      { id: "A1-03", sectionCode: "A1", isNonNegotiable: false }, // DEFERRED but carries a stale GREEN
+    ];
+    const sections = [{ code: "A1", name: "Board" }];
+    const results = [
+      { itemId: "A1-01", status: "DONE", flag: "GREEN" },
+      { itemId: "A1-02", status: "DEFERRED", flag: "RED" }, // left over from a prior pass
+      { itemId: "A1-03", status: "DEFERRED", flag: "GREEN" }, // left over from a prior pass
+    ];
+    const s = summarize(items, sections, results);
+    // Only the one DONE item contributes its flag.
+    expect(s.totals.green).toBe(1);
+    expect(s.totals.red).toBe(0);
+    expect(s.totalReds).toBe(0);
+    // The stale RED on a non-negotiable item must NOT fail the gate.
+    expect(s.nonNegotiable.gatePass).toBe(true);
+    expect(s.nonNegotiable.failedItems).toEqual([]);
+    // Status counts still reflect reality: 1 done, 2 deferred, run incomplete.
+    expect(s.itemsDone).toBe(1);
+    expect(s.itemsDeferred).toBe(2);
+    expect(s.complete).toBe(false);
+  });
 });
