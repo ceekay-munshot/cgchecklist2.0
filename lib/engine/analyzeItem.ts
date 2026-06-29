@@ -1,4 +1,5 @@
 import { callJSON } from "./llm";
+import { QuotaExhaustedError } from "./quota";
 import { parseNumericValue } from "./thresholds";
 import {
   NOT_AVAILABLE,
@@ -10,6 +11,29 @@ import {
 } from "./types";
 
 const NA: Analysis = { value: NOT_AVAILABLE, confidence: "low" };
+
+/**
+ * Run a schema-validated extraction, degrading a GENUINE provider error (bad
+ * JSON after retries, 5xx, a model that consistently fails on this passage) to
+ * `null` so the caller returns a clean NA instead of a hard ERROR — matching the
+ * project's "never throw, return not_available" philosophy. A QuotaExhaustedError
+ * is NOT swallowed: it propagates so the orchestrator DEFERS the item.
+ *
+ * This is what stops items like A3-03 / A3-07 from failing deterministically: a
+ * provider hiccup on their passages now yields an honest NA, not an ERROR.
+ */
+async function extract<T>(
+  role: Parameters<typeof callJSON>[0],
+  opts: Parameters<typeof callJSON>[1],
+  schema: object,
+): Promise<{ data: T; provider: string } | null> {
+  try {
+    return await callJSON<T>(role, opts, schema);
+  } catch (e) {
+    if (e instanceof QuotaExhaustedError) throw e;
+    return null;
+  }
+}
 
 /** Concatenate retrieved passages into a compact, citation-tagged prompt block. */
 function passagesBlock(passages: EvidencePassage[]): string {
@@ -159,10 +183,10 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
     `Put the exact supporting sentence (<=200 chars) in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
-  // Errors (incl. QuotaExhaustedError) propagate to evaluateItem, which records
-  // an ERROR result (retried next run) or re-throws quota errors for the
-  // orchestrator to DEFER. We only return NA when the model finds nothing.
-  const { data, provider } = await callJSON<BoardExtract>("bulkClassify", { prompt, temperature: 0 }, BOARD_SCHEMA);
+  // Quota errors propagate (→ DEFER); a genuine provider failure degrades to NA.
+  const res = await extract<BoardExtract>("bulkClassify", { prompt, temperature: 0 }, BOARD_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
   if (!data.relevant || !data.found) return NA;
   const pct =
     data.percentIndependent ??
@@ -232,7 +256,9 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
     `sentence (<=240 chars) in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
-  const { data, provider } = await callJSON<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
+  const res = await extract<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
   if (!data.relevant || !data.found || !data.value) return NA;
   return {
     value: data.value,
@@ -260,18 +286,22 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
     `are often flattened into messy text — reconstruct the figures carefully.\n` +
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
-    `\nExtract the SPECIFIC figures this item needs (amounts in Rs crore, with year if ` +
-    `shown — e.g. tax disputes, guarantees, capital commitments; or RPT totals, royalty/` +
-    `brand fees, loans to group) and summarise them in "value" as a concise factual ` +
-    `statement INCLUDING the key numbers. RELEVANCE: set "relevant" to false ONLY if these ` +
-    `excerpts are clearly a different note. If relevant but the figure isn't present, set ` +
-    `"found" to false. Set "confident" to false if the figures are unclear/partial. Put the ` +
-    `exact supporting line in "evidenceQuote" and its page in "page".\n\n` +
+    `\nExtract ONLY the figure(s) for THIS SPECIFIC item (per its title above) — in Rs crore, ` +
+    `with the year if shown — and IGNORE other figures in the note (e.g. for "Corporate ` +
+    `guarantees given" report only guarantees, not tax disputes or capital commitments). ` +
+    `Prefer the most recent year. Summarise in "value" as a concise factual statement ` +
+    `INCLUDING the key number(s) for this item. RELEVANCE: set "relevant" to false ONLY if ` +
+    `these excerpts are clearly a different note. If relevant but THIS item's figure isn't ` +
+    `present, set "found" to false. Set "confident" to false if the figures are unclear/` +
+    `partial. Put the exact supporting line in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
   // Gemini (longContext) is best at reconstructing flattened tables; the quota
-  // layer falls back through the chain if it is unavailable.
-  const { data, provider } = await callJSON<QualExtract>("longContext", { prompt, temperature: 0 }, QUAL_SCHEMA);
+  // layer falls back through the chain if it is unavailable. A genuine provider
+  // failure degrades to NA (quota errors still propagate → DEFER).
+  const res = await extract<QualExtract>("longContext", { prompt, temperature: 0 }, QUAL_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
   if (!data.relevant || !data.found || !data.value) return NA;
   return {
     value: data.value,

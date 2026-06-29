@@ -12,11 +12,13 @@ vi.mock("@/lib/llm", () => {
 });
 
 import { analyzeItem } from "./analyzeItem";
-import { resetQuotaState } from "./quota";
+import { resetQuotaState, QuotaExhaustedError } from "./quota";
 import { llm } from "@/lib/llm";
+import { getProviderUsage } from "@/lib/usage";
 import type { EngineItem, Evidence } from "./types";
 
 const asMock = (fn: unknown) => fn as unknown as Mock;
+const ALL_PROVIDERS = [llm.reasoning, llm.bulkClassify, llm.longContext, llm.fallback];
 
 function item(p: Partial<EngineItem> & { id: string }): EngineItem {
   return {
@@ -204,5 +206,31 @@ describe("analyzeItem", () => {
     expect(a.value).toContain("1,234");
     expect(a.providerUsed).toBe("gemini");
     expect(a.citation?.page).toBe(210);
+  });
+
+  it("TASK 6: a genuine provider error during extraction degrades to NA, not a throw", async () => {
+    // Every provider fails with a non-rate-limit error (e.g. a 5xx or persistently
+    // bad JSON) — the item must return a clean NA, not become a hard ERROR.
+    for (const c of ALL_PROVIDERS) asMock(c.completeJSON).mockRejectedValue(new Error("upstream 500"));
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "QUALITATIVE",
+      passages: [{ text: "Cross-holdings and group structure ...", citation: { sourceDocId: "ar1", page: 12, docType: "ANNUAL_REPORT", docName: "AR" } }],
+    };
+    const a = await analyzeItem(item({ id: "A3-03", outputFormat: "Text" }), ev);
+    expect(a.value).toBe("not available"); // honest NA — what fixes A3-03 / A3-07 erroring
+    expect(a.confidence).toBe("low");
+  });
+
+  it("TASK 6: a QuotaExhaustedError during extraction still propagates (so the run DEFERS)", async () => {
+    asMock(getProviderUsage).mockResolvedValue({ requests: 999_999 }); // every provider over its daily cap
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "QUALITATIVE",
+      passages: [{ text: "Cross-holdings and group structure ...", citation: { sourceDocId: "ar1", page: 12, docType: "ANNUAL_REPORT", docName: "AR" } }],
+    };
+    await expect(analyzeItem(item({ id: "A3-03", outputFormat: "Text" }), ev)).rejects.toBeInstanceOf(QuotaExhaustedError);
   });
 });

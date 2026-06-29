@@ -437,6 +437,42 @@ answers, table-heavy notes still weren't read, and both reds were wrong). Goal:
   remuneration), and the note path reads the CL note specifically — so A7a-13 no
   longer false-reds on a goodwill increase.
 
+**Done (Phase 8 — trustworthy REDS / materiality):** a complete TCS run produced
+7 reds that were mostly FALSE POSITIVES on a clean blue-chip (reds are what a
+client scans first, so this destroyed trust). Goal: a red fires ONLY on a real,
+MATERIAL, correctly-read problem. New pure, unit-tested module
+`lib/engine/materiality.ts`:
+- **Materiality thresholds (`MATERIALITY_RULES`).** ₹-denominated items
+  (contingent liabilities, guarantees, capital commitments, RPT amounts, royalty/
+  brand fees) are classified DETERMINISTICALLY (no LLM) by scaling the figure
+  against company size — net worth / revenue / PAT read from the Tier-1
+  structuredData (`companyScaleFrom`) — against per-item green/red %-bands taken
+  from the checklist. An immaterial amount can NEVER be a red (e.g. TCS's ₹226cr
+  subsidiary guarantee ≈ 0.24% of net worth → GREEN; royalty ≈ 0.15% of revenue →
+  GREEN). `assignFlag(item, analysis, { scale })` receives the scale, loaded once
+  per run + memoised (`loadCompanyScale`).
+- **De-duplication (Task 2).** The note extractor now pulls ONLY the figure for
+  THAT item, and a `guardAmount` post-judge guard downgrades a RED whose only
+  cited figure is immaterial — so one ₹226cr guarantee no longer red-flags A7a-06,
+  A7a-12 AND A7a-13.
+- **Numeric sanity (Task 3).** A figure implausibly large versus revenue/net
+  worth (>1.5×) is treated as a mis-extraction → NEUTRAL, never a confident red
+  (mirrors the A14-02 borrowings cross-check) — kills the bogus ₹7,508cr "Tejas"
+  red.
+- **Categorical compliance (Task 4, `CATEGORICAL_RULES`).** A2-01 audit-committee
+  quality is decided deterministically against SEBI LODR (≥2/3 independent +
+  independent chair + ≥4 meetings): compliant → GREEN; red only when genuinely
+  non-compliant — so a 75%-independent committee is no longer a false red.
+- **Web-only NA (Task 5, `WEB_ONLY_ITEMS`).** Items absent from filings
+  (overboarding, attendance, attrition, research coverage, marquee investors, SEBI
+  history) try a web fallback and report an EXPECTED NA ("web/market-data item"),
+  not a silent retrieval failure.
+- **Graceful extraction (Task 6).** A genuine (non-quota) provider error during
+  fact extraction now degrades to a clean NA instead of a hard ERROR (quota errors
+  still propagate → DEFER) — so items like A3-03 / A3-07 stop failing
+  deterministically. (lastError couldn't be read from Neon in the sandbox; this is
+  the correct production behaviour regardless of the specific hiccup.)
+
 **Later phases:** `lib/export` (xlsx/pdf/pptx); a **daily schedule** for
 `analyze-run` (drain the queue under quota). (`lib/ingest` is now largely
 covered by `lib/harvest`.)

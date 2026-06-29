@@ -1,6 +1,12 @@
 import { callJSON } from "./llm";
 import { evidenceStrategyFor } from "./evidence";
 import { CUSTOM_NUMERIC } from "./numeric";
+import {
+  CATEGORICAL_RULES,
+  classifyAmount,
+  guardAmount,
+  type CompanyScale,
+} from "./materiality";
 import { classifyNumeric, parseNumericValue } from "./thresholds";
 import {
   isNotAvailable,
@@ -10,6 +16,11 @@ import {
   type Flag,
   type FlagResult,
 } from "./types";
+
+/** Optional context for flag assignment (company size for materiality scaling). */
+export interface FlagContext {
+  scale?: CompanyScale | null;
+}
 
 type JudgeFlag = "GREEN" | "RED" | "NEUTRAL";
 
@@ -69,7 +80,11 @@ async function judge(
  * non-negotiable qualitative item is cross-checked by a second, cheaper model;
  * RED is confirmed only if both agree, else it becomes NEUTRAL + "needs review".
  */
-export async function assignFlag(item: EngineItem, analysis: Analysis): Promise<FlagResult> {
+export async function assignFlag(
+  item: EngineItem,
+  analysis: Analysis,
+  context: FlagContext = {},
+): Promise<FlagResult> {
   if (isNotAvailable(analysis.value)) {
     return applyGate(item, { flag: "NOT_AVAILABLE", reason: "No evidence available." });
   }
@@ -83,6 +98,22 @@ export async function assignFlag(item: EngineItem, analysis: Analysis): Promise<
   if (custom && num != null) {
     const c = custom(num);
     return applyGate(item, { flag: c.flag, reason: c.reason });
+  }
+
+  // Categorical compliance rule (e.g. A2-01 audit committee): decide
+  // deterministically so an over-strict LLM judge can't red a compliant fact.
+  const categorical = CATEGORICAL_RULES[item.id];
+  if (categorical) {
+    const c = categorical(analysis.value, analysis.evidenceQuote);
+    return applyGate(item, { flag: c.flag, reason: c.reason, provider: "deterministic" });
+  }
+
+  // Amount-based item (contingent liabilities, guarantees, RPT amounts, royalty):
+  // classify by MATERIALITY against company size — an immaterial amount can never
+  // be a red, and an implausibly large figure is distrusted (Tasks 1 & 3). No LLM.
+  const amountFlag = classifyAmount(item.id, analysis.value, analysis.evidenceQuote, context.scale);
+  if (amountFlag) {
+    return applyGate(item, { flag: amountFlag.flag, reason: amountFlag.reason, provider: "deterministic" });
   }
 
   // NUMERIC items with parseable green/red bands are classified deterministically —
@@ -103,6 +134,14 @@ export async function assignFlag(item: EngineItem, analysis: Analysis): Promise<
   } catch (e) {
     return applyGate(item, { flag: "NEUTRAL", reason: `Judge unavailable (${(e as Error).message}).` });
   }
+
+  // Materiality guard: a trend/quality A7a/A5 item must not red on an immaterial
+  // figure (Task 2 — e.g. the "movement" item red-flagging a tiny guarantee).
+  const guard = guardAmount(item.id, judged.flag, analysis.value, analysis.evidenceQuote, context.scale);
+  if (guard) {
+    return applyGate(item, { flag: guard.flag, reason: guard.reason, provider: judged.provider });
+  }
+
   return applyGate(
     item,
     { flag: judged.flag, reason: judged.reason, provider: judged.provider },

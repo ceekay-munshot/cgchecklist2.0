@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getEvidence } from "./evidence";
+import { getEvidence, evidenceStrategyFor, loadCompanyScale } from "./evidence";
 import { analyzeItem } from "./analyzeItem";
 import { assignFlag } from "./flag";
 import { QuotaExhaustedError } from "./quota";
@@ -27,7 +27,11 @@ function providersFrom(analysis: Analysis, flagRes: FlagResult): string[] {
 }
 
 function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: FlagResult): string {
-  if (flagRes.flag === "NOT_AVAILABLE") return "Not available — no supporting evidence found.";
+  if (flagRes.flag === "NOT_AVAILABLE") {
+    return evidenceStrategyFor(item).expectedNa
+      ? "Expected NA — not disclosed in filings; this is a web/market-data item."
+      : "Not available — no supporting evidence found.";
+  }
   const v =
     kindOf(item) === "NUMERIC" ? flagRes.reason : `${analysis.value} — ${flagRes.reason}`;
   return v.slice(0, 280);
@@ -44,7 +48,9 @@ export async function evaluateItem(item: EngineItem, runId: string): Promise<Ite
   try {
     const evidence = await getEvidence(item, runId);
     const analysis = await analyzeItem(item, evidence);
-    const flagRes = await assignFlag(item, analysis);
+    // Company size (Tier-1) lets assignFlag scale ₹-amounts for materiality.
+    const scale = await loadCompanyScale(runId);
+    const flagRes = await assignFlag(item, analysis, { scale });
 
     const result: ItemEvaluation = {
       itemId: item.id,

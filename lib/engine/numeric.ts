@@ -27,7 +27,7 @@ function latestNonNull(values: Array<string | null>): string | null {
 }
 
 /** The most recent numeric value in the matched row, or null. */
-function latestRowNumber(table: PeriodTable | undefined, match: RegExp): number | null {
+export function latestRowNumber(table: PeriodTable | undefined, match: RegExp): number | null {
   const row = rowFor(table, match);
   if (!row) return null;
   for (let i = row.values.length - 1; i >= 0; i--) {
