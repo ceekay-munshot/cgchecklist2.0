@@ -267,9 +267,16 @@ export async function harvestCompany({
         const existingDoc = await prisma.sourceDoc.findUnique({
           where: { runId_sourceUrl: { runId, sourceUrl: link.url } },
         });
-        if (existingDoc?.fetchStatus === "OK") {
-          // Already harvested: prime the hash map (so a not-yet-fetched
-          // duplicate later in this run is recognised) and skip the download.
+        // A doc whose text was PRUNED (DONE-run storage thrift) is OK but has no
+        // extractedText and is not a dedup marker — re-fetch it so a re-harvest
+        // rehydrates a previously-analysed run for fresh offline iteration.
+        const isDuplicateMarker = existingDoc?.note?.startsWith("duplicate of") ?? false;
+        const textPruned =
+          existingDoc?.fetchStatus === "OK" && existingDoc.extractedText == null && !isDuplicateMarker;
+        if (existingDoc?.fetchStatus === "OK" && !textPruned) {
+          // Already harvested with usable text (or a dedup marker): prime the
+          // hash map (so a not-yet-fetched duplicate later in this run is
+          // recognised) and skip the download.
           if (existingDoc.contentHash && !seenHashes.has(existingDoc.contentHash)) {
             seenHashes.set(existingDoc.contentHash, existingDoc.sourceUrl);
           }

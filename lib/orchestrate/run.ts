@@ -243,8 +243,13 @@ export async function runAnalysis(
     },
   });
 
+  // Storage thrift is OPT-IN (PRUNE_TEXT=true). By DEFAULT we KEEP the document
+  // text on DONE so the "harvest once, iterate offline" workflow survives — a
+  // later `--force` re-eval (after an engine change) must be able to re-read the
+  // annual-report text. Pruning it made every re-run return all-NA (only the
+  // un-pruned Tier-1 numerics survived) because getEvidence had nothing to read.
   let pruned = false;
-  if (status === "DONE") {
+  if (status === "DONE" && process.env.PRUNE_TEXT === "true") {
     await pruneRunText(runId);
     pruned = true;
   }

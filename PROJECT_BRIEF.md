@@ -231,8 +231,9 @@ search API, so its `search()` is always `not_available`.)
   **No score field.**
   - `AnalysisRun.summaryJson` (set on completion) = per-section flag rollups
     (green/red/neutral/NA), `totalReds`, and the **non-negotiable gate**
-    (`gatePass=false` if ANY non-negotiable item is RED). On `DONE` the heavy
-    `SourceDoc.extractedText` is pruned (kept while in-progress / PARTIAL).
+    (`gatePass=false` if ANY non-negotiable item is RED). The heavy
+    `SourceDoc.extractedText` is KEPT by default (so `--force` re-evals can
+    re-read it); set `PRUNE_TEXT=true` to opt into dropping it on `DONE`.
 - **`ProviderUsage`** — free-tier quota, unique `(provider, date)`: `requests`,
   `tokens`.
 
@@ -394,12 +395,14 @@ batch for a run — `runAnalysis(runId)` evaluates every item via
   retired only after repeated strikes (`LLM_MAX_STRIKES`, default 8 — a real cap). When no provider can serve a call →
   `QuotaExhaustedError` → the item is **DEFERRED**, the run goes **PARTIAL**, the
   next run resumes. **Tier-1 zero-LLM numeric items always complete** regardless.
-- **Completion + storage thrift.** When no items remain pending/error/deferred:
-  compute `summaryJson` (section rollups + totalReds + non-negotiable gate), set
-  `status=DONE`, update counters, then **prune** the heavy `SourceDoc.extractedText`
-  — keeping structuredData, the ItemResults (evidence quote + source ref + page),
-  and SourceDoc metadata incl. `sourceUrl` (re-fetchable on demand). Text is kept
-  while a run is in-progress / PARTIAL across days.
+- **Completion + storage thrift (opt-in).** When no items remain pending/error/
+  deferred: compute `summaryJson` (section rollups + totalReds + non-negotiable
+  gate), set `status=DONE`, update counters. The heavy `SourceDoc.extractedText`
+  is **KEPT by default** so a later `--force` re-eval (after an engine change) can
+  re-read the annual-report text — pruning it made re-runs return all-NA (only the
+  un-pruned Tier-1 numerics survived). Set `PRUNE_TEXT=true` to opt into dropping
+  it on `DONE` (keeping structuredData + the ItemResults' evidence/source/page +
+  `sourceUrl`); a re-harvest then re-fetches the pruned docs to rehydrate the run.
 - **Queue drainer.** `drainQueue()` processes eligible runs (HARVESTED / PARTIAL)
   in order — the on-demand queue and the future daily-schedule entry point.
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -88,7 +88,14 @@ describe("runAnalysis — resumable", () => {
 });
 
 describe("runAnalysis — completion + prune", () => {
-  it("marks DONE, stores summary + gate, and prunes heavy text", async () => {
+  const prevPrune = process.env.PRUNE_TEXT;
+  afterEach(() => {
+    if (prevPrune === undefined) delete process.env.PRUNE_TEXT;
+    else process.env.PRUNE_TEXT = prevPrune;
+  });
+
+  it("marks DONE, stores summary + gate, and KEEPS text by default (no prune)", async () => {
+    delete process.env.PRUNE_TEXT;
     asMock(prisma.checklistItem.findMany).mockResolvedValue(mkItems(2));
     asMock(prisma.itemResult.findMany)
       .mockResolvedValueOnce([])
@@ -101,13 +108,32 @@ describe("runAnalysis — completion + prune", () => {
     const out = await runAnalysis("run1");
 
     expect(out.status).toBe("DONE");
+    // Text is KEPT so a later --force re-eval can re-read it (iterate offline).
+    expect(out.pruned).toBe(false);
+    expect(asMock(prisma.sourceDoc.updateMany)).not.toHaveBeenCalled();
+    const lastUpdate = asMock(prisma.analysisRun.update).mock.calls.at(-1)![0];
+    expect(lastUpdate.data.status).toBe("DONE");
+    expect(lastUpdate.data.summaryJson.totals.red).toBe(1);
+  });
+
+  it("prunes heavy text only when PRUNE_TEXT=true (opt-in storage thrift)", async () => {
+    process.env.PRUNE_TEXT = "true";
+    asMock(prisma.checklistItem.findMany).mockResolvedValue(mkItems(2));
+    asMock(prisma.itemResult.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { itemId: "A1-01", status: "DONE", flag: "GREEN" },
+        { itemId: "A1-02", status: "DONE", flag: "GREEN" },
+      ]);
+    asMock(evaluateItem).mockResolvedValue({});
+
+    const out = await runAnalysis("run1");
+
+    expect(out.status).toBe("DONE");
     expect(out.pruned).toBe(true);
     expect(asMock(prisma.sourceDoc.updateMany)).toHaveBeenCalledWith(
       expect.objectContaining({ data: { extractedText: null } }),
     );
-    const lastUpdate = asMock(prisma.analysisRun.update).mock.calls.at(-1)![0];
-    expect(lastUpdate.data.status).toBe("DONE");
-    expect(lastUpdate.data.summaryJson.totals.red).toBe(1);
   });
 });
 
