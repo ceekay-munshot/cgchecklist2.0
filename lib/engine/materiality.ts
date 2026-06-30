@@ -47,6 +47,7 @@ export const MATERIALITY_RULES: Record<string, MaterialityRule> = {
   "A5-02": { base: "revenue", greenPct: 1, redPct: 2.5 }, // royalty/brand fees (<1% / >2–3% of sales)
   "A5-03": { base: "netWorth", greenPct: 5, redPct: 15 }, // loans/ICDs/guarantees to group (% net worth)
   "A5-04": { base: "revenue", greenPct: 5, redPct: 15 }, // promoter-vendor transactions
+  "A11-03": { base: "netWorth", greenPct: 5, redPct: 15 }, // inter-corporate loans (% net worth)
   // A7a — Contingent liabilities & commitments (₹ amounts, scaled to net worth)
   "A7a-01": { base: "netWorth", greenPct: 25, redPct: 50 }, // CL as % of net worth (<10–25% / >50–100%)
   "A7a-03": { base: "netWorth", greenPct: 10, redPct: 30 }, // direct tax disputes

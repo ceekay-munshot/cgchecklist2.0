@@ -61,6 +61,72 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
       "rotation of auditor",
     ],
   },
+  // ---- Bucket A: deep note/section retrieval for items whose data IS in the
+  // harvested docs (AR notes / concall transcripts / credit ratings) but a
+  // shallow keyword search missed. All previously NA; no regression to others.
+  // Auditor remuneration / non-audit fees — the "Payments to the auditor" note.
+  "A4-06": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["payments to the auditor", "payment to auditors", "auditor's remuneration", "remuneration to auditors", "payment to statutory auditor"],
+    keywords: ["audit fee", "statutory audit", "tax audit", "other services", "reimbursement of expenses", "limited review"],
+    useGeminiNote: true,
+  },
+  "A4-07": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["payments to the auditor", "payment to auditors", "auditor's remuneration", "remuneration to auditors", "payment to statutory auditor"],
+    keywords: ["audit fee", "statutory audit", "remuneration", "fees", "other services"],
+    useGeminiNote: true,
+  },
+  // Inter-corporate loans / Sec-186 — loans, guarantees & investments note.
+  "A11-03": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["loans, guarantees and investments", "particulars of loans", "loans given", "section 186", "investments made during the year"],
+    keywords: ["loan", "inter-corporate", "section 186", "guarantee", "investment in", "deposits placed"],
+    useGeminiNote: true,
+  },
+  // Share-capital note: one-vote ordinary shares (A3-04) / no preferential or
+  // discounted insider issuance (A3-05) → read the rights & changes-in-capital text.
+  "A3-04": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["rights, preferences and restrictions", "terms/rights attached to equity shares", "rights attached to equity shares", "equity share capital", "share capital"],
+    keywords: ["one vote", "per share", "voting rights", "equity shares of", "ordinary shares", "differential voting"],
+  },
+  "A3-05": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["share capital", "changes in equity share capital", "reconciliation of the number of shares", "preferential issue", "employee stock"],
+    keywords: ["preferential allotment", "warrants", "at a discount", "bonus issue", "rights issue", "preferential basis", "employee stock option"],
+  },
+  // Employee stock options / share-based payments note (TCS has none → GREEN).
+  "A6-04": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["employee stock option", "share-based payment", "employee share-based", "stock options"],
+    keywords: ["stock option", "esop", "rsu", "share-based payment", "grant", "exercise price", "dilution"],
+  },
+  "A12-03": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["employee stock option", "share-based payment", "stock options"],
+    keywords: ["stock option", "esop", "rsu", "share-based payment", "option pool"],
+  },
+  // Concall candor & guidance — read the harvested earnings-call transcripts.
+  "A7-04": {
+    from: "document",
+    docTypes: ["EARNINGS_PDF", "ANNUAL_REPORT"],
+    keywords: ["guidance", "outlook", "demand", "margin", "deal", "commentary", "we expect", "management"],
+  },
+  // Rating actions — read the harvested credit-rating (ICRA) announcements.
+  "A9-05": {
+    from: "document",
+    docTypes: ["ANNOUNCEMENT"],
+    sections: ["rating", "rationale", "outlook"],
+    keywords: ["rating", "reaffirmed", "aaa", "a1+", "downgrade", "upgrade", "withdrawn", "outlook stable"],
+  },
   // Audit-committee composition lives in a table in the corporate-governance
   // report — give it a large note window so the dedicated A2-01 extractor can
   // reconstruct independent/total members + meetings from the flattened table.

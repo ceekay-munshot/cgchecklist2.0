@@ -81,6 +81,17 @@ describe("evidenceStrategyFor — routing per item", () => {
     // a normal filing item is NOT marked expected-NA
     expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).expectedNa).toBeFalsy();
   });
+  it("routes Bucket-A items to the right harvested source (notes / transcripts / ratings)", () => {
+    // auditor-fee note → Gemini note reading
+    expect(evidenceStrategyFor(item({ id: "A4-06", outputFormat: "₹" })).useGeminiNote).toBe(true);
+    expect(evidenceStrategyFor(item({ id: "A11-03", outputFormat: "₹" })).useGeminiNote).toBe(true);
+    // concall candor → read the earnings-call transcripts
+    expect(evidenceStrategyFor(item({ id: "A7-04", outputFormat: "Text" })).docTypes).toContain("EARNINGS_PDF");
+    // rating actions → read the credit-rating announcements
+    expect(evidenceStrategyFor(item({ id: "A9-05", outputFormat: "Text" })).docTypes).toContain("ANNOUNCEMENT");
+    // ESOP existence → share-based-payments section, plain qualitative (not a figure note)
+    expect(evidenceStrategyFor(item({ id: "A12-03", outputFormat: "Yes/No" })).sections?.[0]).toContain("stock option");
+  });
   it("gives A2-01 a note-window strategy so the committee table can be read", () => {
     const s = evidenceStrategyFor(item({ id: "A2-01", outputFormat: "Yes/No + count" }));
     expect(s.from).toBe("document");
