@@ -21,6 +21,10 @@ import type { LlmRole } from "@/lib/llm";
  */
 
 export const DEFAULT_DAILY_CAPS: Record<string, number> = {
+  // OpenAI is paid (no free-tier per-day ceiling) — keep the daily gate out of
+  // the way so multiple companies a day aren't throttled. Set a real cost ceiling
+  // via OPENAI_DAILY_CAP if you want one.
+  openai: 1_000_000,
   groq: 900,
   mistral: 500,
   gemini: 1400,

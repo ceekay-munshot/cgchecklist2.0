@@ -147,18 +147,25 @@ scripts/                 # harvest.ts (npm run harvest), analyze-validate.ts (np
 
 | Provider | Role key | Used for |
 | --- | --- | --- |
-| **Gemini** | `longContext` | Long-context document reading (annual reports, auditor notes) |
-| **Groq** | `bulkClassify` | Fast / cheap bulk classification across many items |
-| **Mistral** | `reasoning` | Qualitative reasoning + tie-breaks |
-| **Nvidia NIM** | `fallback` | Fallback capacity |
+| **OpenAI** (paid) | `longContext`, `bulkClassify`, `reasoning` | **PRIMARY for every analysis role** — extraction + judgment on a reliable, high-quota key (no free-tier rate-limit starvation) |
+| **Mistral** | `fallback` | Safety-net fallback (free provider) |
+| **Gemini / Groq / Nvidia** | — | Remain wired as additional fallbacks in the role chain |
 | **Firecrawl → Scrape.do** | — | Web research fallback chain |
+
+> **Why OpenAI is primary (recorded):** free-tier per-minute limits starved real
+> runs, and Phase 8's graceful-extraction turns a failed model call into a clean
+> `NOT_AVAILABLE` — so a flaky minute silently dropped good flags to NA. A paid
+> OpenAI key removes that failure mode. The free providers stay configured as a
+> **fallback**: `callJSON` falls through the role chain to any other configured
+> provider, so a blank `OPENAI_API_KEY` (`isConfigured() === false`) transparently
+> reverts to the old Gemini/Groq/Mistral/Nvidia routing. Pick a model by ROLE.
 
 **Select an LLM by role, not by name**, so the table can change in one place:
 
 ```ts
 import { llm } from "@/lib/llm";
-await llm.longContext.completeJSON(opts, schema); // Gemini
-await llm.bulkClassify.complete(opts);            // Groq
+await llm.longContext.completeJSON(opts, schema); // OpenAI (primary)
+await llm.bulkClassify.complete(opts);            // OpenAI (primary)
 ```
 
 ---
@@ -231,11 +238,12 @@ Enums: `Flag`, `Exchange`, `RunStatus`, `SourceDocType`, `FetchedVia`,
 
 ## 7. Environment variables (`.env.example`)
 
-`GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `NVIDIA_API_KEY`,
-`FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`, `SCREENER_EMAIL`, `SCREENER_PASSWORD`,
-`DATABASE_URL`.
-Optional model overrides: `GEMINI_MODEL`, `GROQ_MODEL`, `MISTRAL_MODEL`,
-`NVIDIA_MODEL`. Copy `.env.example` → `.env` and fill in. `/health` shows any
+`OPENAI_API_KEY` (primary analysis provider), `GEMINI_API_KEY`, `GROQ_API_KEY`,
+`MISTRAL_API_KEY`, `NVIDIA_API_KEY`, `FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`,
+`SCREENER_EMAIL`, `SCREENER_PASSWORD`, `DATABASE_URL`.
+Optional model overrides: `OPENAI_MODEL` (default `gpt-4o`), `GEMINI_MODEL`,
+`GROQ_MODEL`, `MISTRAL_MODEL`, `NVIDIA_MODEL`. Optional cost ceiling:
+`OPENAI_DAILY_CAP` (per-day request cap; unset = effectively uncapped). Copy `.env.example` → `.env` and fill in. `/health` shows any
 blank provider as **not configured**. `SCREENER_*` feed the Phase-3 Playwright
 harvester (sourced from GitHub secrets in CI).
 

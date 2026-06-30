@@ -29,7 +29,10 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # Engine routing: Groq=extract, Mistral=judge, Gemini=long, Nvidia=fallback.
+      # Engine routing: OpenAI (paid) is PRIMARY for every role; the free
+      # providers below stay as a safety-net fallback chain.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

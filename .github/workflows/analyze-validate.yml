@@ -23,8 +23,11 @@ jobs:
     env:
       # Persistent DB with the harvested SourceDocs (required).
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # LLM providers (engine routing): Groq=extract, Mistral=judge, Gemini=long,
-      # Nvidia=fallback. Firecrawl/Scrape.do = web fallback for sparse items.
+      # LLM providers (engine routing): OpenAI (paid) is PRIMARY for every role;
+      # the free providers stay as a safety-net fallback chain.
+      # Firecrawl/Scrape.do = web fallback for sparse items.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
