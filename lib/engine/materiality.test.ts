@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
 import {
   auditCommitteeFlag,
+  auditOpinionFlag,
   CATEGORICAL_RULES,
+  chairmanMdSeparationFlag,
   cheapInsiderEquityFlag,
   classifyAmount,
   companyScaleFrom,
@@ -143,5 +145,44 @@ describe("cheapInsiderEquityFlag (A3-05) — only a real promoter discount is a 
   });
   it("GREENs a clean 'none / at-market' disclosure", () => {
     expect(cheapInsiderEquityFlag("No preferential allotment or warrants to promoters", null).flag).toBe("GREEN");
+  });
+});
+
+describe("auditOpinionFlag (A4-05) — boilerplate going-concern is not a qualification", () => {
+  it("is registered as the deterministic A4-05 categorical rule", () => {
+    expect(CATEGORICAL_RULES["A4-05"]).toBe(auditOpinionFlag);
+  });
+  it("does NOT red on standard auditor-responsibilities boilerplate (the TCS false positive)", () => {
+    expect(auditOpinionFlag("material uncertainty regarding going concern", null).flag).not.toBe("RED");
+    expect(
+      auditOpinionFlag(
+        "going concern",
+        "we conclude on the appropriateness of the going concern basis of accounting and, if a material uncertainty exists, we are required to draw attention",
+      ).flag,
+    ).toBe("NEUTRAL");
+  });
+  it("REDs an explicitly modified opinion", () => {
+    expect(auditOpinionFlag("Qualified opinion issued by the auditor", null).flag).toBe("RED");
+    expect(auditOpinionFlag("Adverse opinion", null).flag).toBe("RED");
+  });
+  it("REDs a genuine going-concern emphasis (not boilerplate)", () => {
+    expect(
+      auditOpinionFlag("We draw attention to Note 5; a material uncertainty related to going concern exists", null).flag,
+    ).toBe("RED");
+  });
+  it("GREENs a clean/unmodified opinion", () => {
+    expect(auditOpinionFlag("Unmodified opinion; true and fair view", null).flag).toBe("GREEN");
+  });
+});
+
+describe("chairmanMdSeparationFlag (A1-02) — split roles ≠ red", () => {
+  it("is registered as the deterministic A1-02 categorical rule", () => {
+    expect(CATEGORICAL_RULES["A1-02"]).toBe(chairmanMdSeparationFlag);
+  });
+  it("does NOT red when roles are split, even if the chairman is a promoter (TCS false positive)", () => {
+    expect(chairmanMdSeparationFlag("Roles split, chairman is a promoter", null).flag).toBe("GREEN");
+  });
+  it("REDs genuine Chairman–MD duality", () => {
+    expect(chairmanMdSeparationFlag("The same person is Chairman and Managing Director", null).flag).toBe("RED");
   });
 });

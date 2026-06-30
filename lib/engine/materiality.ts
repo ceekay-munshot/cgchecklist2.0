@@ -294,10 +294,66 @@ export function cheapInsiderEquityFlag(value: string, evidenceQuote: string | nu
   return { flag: "NEUTRAL", reason: `No discounted insider/promoter issuance identified (${value}).` };
 }
 
+/**
+ * A4-05 Audit qualifications / emphasis of matter. The red is a MODIFIED opinion
+ * (qualified / adverse / disclaimer) or a real going-concern emphasis. Every audit
+ * report's "Auditor's Responsibilities" section contains boilerplate about going
+ * concern ("…we conclude on the appropriateness… if a material uncertainty exists
+ * … we are required to draw attention…"); a judge red-flagged that boilerplate as
+ * a qualification on clean-opinion TCS. Decide deterministically: RED only on an
+ * EXPLICIT modified opinion or a genuine going-concern emphasis that is NOT the
+ * standard responsibilities boilerplate; a clean/unmodified opinion is GREEN.
+ */
+export function auditOpinionFlag(value: string, evidenceQuote: string | null | undefined): MaterialityResult {
+  const text = `${value} ${evidenceQuote ?? ""}`.toLowerCase();
+  const modified = /\b(qualified opinion|adverse opinion|disclaimer of opinion)\b/.test(text);
+  // Standard auditor-RESPONSIBILITIES boilerplate — not an actual qualification.
+  const boilerplate =
+    /\b(we are required to|we conclude on|auditor.?s responsibilit|going concern basis of accounting|based on the audit evidence obtained)\b/.test(
+      text,
+    );
+  // A REAL going-concern emphasis draws attention / cites significant doubt.
+  const realGoingConcern =
+    /going concern/.test(text) &&
+    /\b(draw attention|significant doubt|may (not )?(be able to )?continue|material uncertainty (exists|related to))\b/.test(text) &&
+    !boilerplate;
+  if (modified || realGoingConcern) {
+    return { flag: "RED", reason: `Modified audit opinion / going-concern emphasis (${value}).` };
+  }
+  if (/\b(unmodified|unqualified|true and fair|clean opinion|without (any )?qualification)\b/.test(text)) {
+    return { flag: "GREEN", reason: `Clean/unmodified audit opinion (${value}).` };
+  }
+  return { flag: "NEUTRAL", reason: `No modified opinion or going-concern emphasis identified (${value}).` };
+}
+
+/**
+ * A1-02 Chairman–MD separation. GREEN = the roles are held by different people;
+ * RED = duality (one person is both Chairman and MD/CEO). A judge red-flagged TCS
+ * — whose roles ARE split — on the tangential fact that the chairman is a promoter
+ * nominee, which is a different item (independence), not separation. Decide
+ * deterministically: separation → GREEN; explicit duality → RED; else NEUTRAL.
+ */
+export function chairmanMdSeparationFlag(value: string, evidenceQuote: string | null | undefined): MaterialityResult {
+  const text = `${value} ${evidenceQuote ?? ""}`.toLowerCase();
+  const duality =
+    /\b(same person|combined|chairman (cum|and) managing director is the same|no separation|chairman.{0,30}also.{0,20}(ceo|managing director))\b/.test(
+      text,
+    );
+  if (duality) {
+    return { flag: "RED", reason: `Chairman and MD/CEO roles are combined (${value}).` };
+  }
+  if (/\b(roles? (are )?(split|separate)|separation of (the )?roles|(chairman|chair) and (managing director|md|ceo) are (different|separate)|different persons?|non[ -]executive chair)\b/.test(text)) {
+    return { flag: "GREEN", reason: `Chairman and MD/CEO roles are separated (${value}).` };
+  }
+  return { flag: "NEUTRAL", reason: `Chairman–MD separation not clearly established (${value}).` };
+}
+
 export const CATEGORICAL_RULES: Record<
   string,
   (value: string, evidenceQuote: string | null | undefined) => MaterialityResult
 > = {
+  "A1-02": chairmanMdSeparationFlag,
   "A2-01": auditCommitteeFlag,
   "A3-05": cheapInsiderEquityFlag,
+  "A4-05": auditOpinionFlag,
 };
