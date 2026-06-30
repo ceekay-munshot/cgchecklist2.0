@@ -1,0 +1,57 @@
+name: report-export
+
+# Manual: exports a company's latest run (from the persistent Neon DB) as
+# downloadable files — a colour-graded Excel workbook and a self-contained HTML
+# report — uploaded as an artifact. No analysis is run; this only reads existing
+# results, so it's cheap and needs no LLM keys.
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Company ticker (or AnalysisRun id) to export"
+        required: true
+        default: TCS
+        type: string
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Persistent DB that holds the analysed run (required).
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Guard — DATABASE_URL must be set
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::DATABASE_URL secret is not set — point it at the Neon DB that holds the run."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Export ${{ inputs.ticker }}
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: npm run report-export -- "$TICKER"
+
+      - name: Upload report files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cg-report-${{ inputs.ticker }}
+          path: report-export/
+          if-no-files-found: warn
