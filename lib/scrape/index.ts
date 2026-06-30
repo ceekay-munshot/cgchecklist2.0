@@ -14,12 +14,15 @@ export { scrapedo } from "./scrapedo";
 /** All researcher modules, keyed by id (used by /health). */
 export const researchers: Record<string, ResearchModule> = { firecrawl, scrapedo };
 
-// Firecrawl is primary; Scrape.do is the fallback.
-const CHAIN: ResearchModule[] = [firecrawl, scrapedo];
+// Scrape.do is primary (it does "the most" — URL/document fetching — cheaply);
+// Firecrawl is the fallback for fetch AND the only provider that can SEARCH, so
+// search() automatically falls through Scrape.do (no search api) to Firecrawl.
+const CHAIN: ResearchModule[] = [scrapedo, firecrawl];
 
 /**
- * The composed researcher: tries Firecrawl, then falls back to Scrape.do, and
- * returns a typed "not_available" result if both fail or neither is configured.
+ * The composed researcher: tries Scrape.do first, then falls back to Firecrawl,
+ * and returns a typed "not_available" if both fail or neither is configured.
+ * For search(), Scrape.do has no api → it skips to Firecrawl.
  */
 export const webResearcher: WebResearcher = {
   async fetchUrl(url: string): Promise<FetchResult> {

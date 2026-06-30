@@ -334,11 +334,14 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   if (!res) return NA;
   const { data, provider } = res;
   if (!data.relevant || !data.found || !data.value) return NA;
+  // Web-sourced facts (news / market data) are inherently softer than audited
+  // filings — keep them low-confidence even when the model is sure.
+  const confidence = evidence.from === "web" || data.confident === false ? "low" : "medium";
   return {
     value: data.value,
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
-    confidence: data.confident === false ? "low" : "medium",
+    confidence,
     providerUsed: provider,
   };
 }

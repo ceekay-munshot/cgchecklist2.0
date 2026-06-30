@@ -152,7 +152,7 @@ scripts/                 # harvest.ts (npm run harvest), analyze-validate.ts (np
 | **Groq** | `bulkClassify` | Fast structured extraction (fallback) |
 | **Mistral** | `reasoning` | Qualitative reasoning + tie-breaks (fallback) |
 | **Nvidia NIM** | `fallback` | Spare capacity (fallback) |
-| **Firecrawl → Scrape.do** | — | Web research fallback chain |
+| **Scrape.do → Firecrawl** | — | Web research chain (Scrape.do fetches; Firecrawl searches) |
 
 > **Why OpenAI is primary (recorded):** free-tier per-minute limits starved real
 > runs, and Phase 8's graceful-extraction turns a failed model call into a clean
@@ -197,9 +197,12 @@ interface WebResearcher {
   search(query): Promise<SearchResult>;
 }
 ```
-`lib/scrape/index.ts` exports `webResearcher`, which tries **Firecrawl** then
-**Scrape.do**, returning a typed `not_available` if both fail. (Scrape.do has no
-search API, so its `search()` is always `not_available`.)
+`lib/scrape/index.ts` exports `webResearcher`, which tries **Scrape.do** first
+(primary fetcher — cheap URL/document fetching) then **Firecrawl**, returning a
+typed `not_available` if both fail. Scrape.do has no search API, so `search()`
+skips it and is served by **Firecrawl** (the only provider that can search) —
+which is what answers the web/market-data items (promoter vintage/family/
+political, SEBI history, attrition, analyst coverage, marquee investors).
 
 ---
 

@@ -80,6 +80,16 @@ describe("evidenceStrategyFor — routing per item", () => {
     // a normal filing item is NOT marked expected-NA
     expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).expectedNa).toBeFalsy();
   });
+  it("routes promoter/management-quality items (A13, A9-04) to the web fallback too — doc first, then web", () => {
+    for (const id of ["A9-04", "A13-01", "A13-03", "A13-06", "A13-09"]) {
+      const s = evidenceStrategyFor(item({ id, sectionCode: id.slice(0, id.indexOf("-")), outputFormat: "Text" }));
+      expect(s.webFallback).toBe(true);
+      expect(s.expectedNa).toBe(true);
+      expect(s.webQuery).toBeTruthy();
+      // still tries the document first (filing-first, web-second)
+      expect(s.from).toBe("document");
+    }
+  });
 });
 
 describe("getEvidence", () => {
