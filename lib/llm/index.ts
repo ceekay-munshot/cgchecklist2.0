@@ -20,24 +20,23 @@ export const llmProviders: Record<string, ProviderModule> = {
 };
 
 /**
- * Provider routing (see PROJECT_BRIEF.md "Provider routing").
+ * Per-ROLE provider table (see PROJECT_BRIEF.md "Provider routing"). These four
+ * stay DISTINCT so the fallback chain spans every provider:
+ *   longContext  -> Gemini   bulkClassify -> Groq
+ *   reasoning    -> Mistral   fallback     -> Nvidia
  *
- * OpenAI (paid) is the PRIMARY for every role: a run is served by one reliable,
- * high-quota model instead of starving on free-tier per-minute limits — which is
- * what made extraction degrade to NOT_AVAILABLE on real runs. The free providers
- * stay wired as a SAFETY NET: `callJSON` falls back through the role chain to any
- * other CONFIGURED provider if OpenAI errors, so a missing/blank OPENAI_API_KEY
- * (isConfigured() === false) transparently reverts to the old Gemini/Groq/Mistral/
- * Nvidia routing.
- *
- * Engine/orchestration code picks a model by ROLE, not by name, so the table
- * changes in one place.
+ * OpenAI (paid) is the PRIMARY but is NOT placed in this table — overloading
+ * multiple roles onto one provider collapses the de-duped fallback chain (it cut
+ * Groq/Gemini out of rotation entirely). Instead, `lib/engine/llm.ts` PREPENDS
+ * OpenAI to every role's chain when it is configured, so a run is served by the
+ * reliable paid model first and still falls through to ALL of Gemini/Groq/
+ * Mistral/Nvidia if OpenAI errors or is unconfigured. Pick a model by ROLE.
  */
 export const llm = {
-  longContext: openai, // long-context document/note reading (was Gemini)
-  bulkClassify: openai, // structured extraction across items (was Groq)
-  reasoning: openai, // qualitative judgment + tie-breaks (was Mistral)
-  fallback: mistral, // safety-net role kept on a free provider
+  longContext: gemini,
+  bulkClassify: groq,
+  reasoning: mistral,
+  fallback: nvidia,
 } satisfies Record<string, ProviderModule>;
 
 export type LlmRole = keyof typeof llm;

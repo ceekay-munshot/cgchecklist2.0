@@ -1,6 +1,10 @@
 import { llm, type LlmRole } from "@/lib/llm";
+// Imported from its own module (not the barrel) so tests that mock "@/lib/llm"
+// see the REAL openai — unconfigured in tests, it filters out and the chain is
+// unchanged; in production it's prepended as the primary.
+import { openai } from "@/lib/llm/openai";
 import { recordProviderUsage } from "@/lib/usage";
-import type { CompleteOpts } from "@/lib/llm";
+import type { CompleteOpts, ProviderModule } from "@/lib/llm";
 import {
   QuotaExhaustedError,
   ROLE_CHAINS,
@@ -38,19 +42,26 @@ function sleep(ms: number): Promise<void> {
  * persistently rate-limited) — so the orchestrator DEFERS the item. A genuine
  * provider error (bad JSON, 5xx) is thrown as-is so the item is recorded ERROR.
  */
+/**
+ * Ordered, de-duped, CONFIGURED provider chain for a role: OpenAI (the paid
+ * primary) first when configured, then the role's free-provider fallback order.
+ * A blank OPENAI_API_KEY drops OpenAI out, reverting to the pure free-tier chain.
+ */
+export function providerChain(role: LlmRole): ProviderModule[] {
+  const seen = new Set<string>();
+  return [openai, ...ROLE_CHAINS[role].map((r) => llm[r])].filter((c) => {
+    if (!c || seen.has(c.id)) return false;
+    seen.add(c.id);
+    return c.isConfigured();
+  });
+}
+
 export async function callJSON<T>(
   role: LlmRole,
   opts: CompleteOpts,
   schema: object,
 ): Promise<{ data: T; provider: string }> {
-  const seen = new Set<string>();
-  const chain = ROLE_CHAINS[role]
-    .map((r) => llm[r])
-    .filter((c) => {
-      if (seen.has(c.id)) return false;
-      seen.add(c.id);
-      return c.isConfigured();
-    });
+  const chain = providerChain(role);
   if (chain.length === 0) {
     throw new QuotaExhaustedError(`no LLM provider configured for role "${role}"`);
   }

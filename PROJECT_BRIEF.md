@@ -147,25 +147,31 @@ scripts/                 # harvest.ts (npm run harvest), analyze-validate.ts (np
 
 | Provider | Role key | Used for |
 | --- | --- | --- |
-| **OpenAI** (paid) | `longContext`, `bulkClassify`, `reasoning` | **PRIMARY for every analysis role** — extraction + judgment on a reliable, high-quota key (no free-tier rate-limit starvation) |
-| **Mistral** | `fallback` | Safety-net fallback (free provider) |
-| **Gemini / Groq / Nvidia** | — | Remain wired as additional fallbacks in the role chain |
+| **OpenAI** (paid) | — (PRIMARY, prepended) | **Primary for every analysis call** — extraction + judgment on a reliable, high-quota key. Not in the role table; `lib/engine/llm.ts` prepends it to every role chain when configured. |
+| **Gemini** | `longContext` | Long-context document / note reading (fallback) |
+| **Groq** | `bulkClassify` | Fast structured extraction (fallback) |
+| **Mistral** | `reasoning` | Qualitative reasoning + tie-breaks (fallback) |
+| **Nvidia NIM** | `fallback` | Spare capacity (fallback) |
 | **Firecrawl → Scrape.do** | — | Web research fallback chain |
 
 > **Why OpenAI is primary (recorded):** free-tier per-minute limits starved real
 > runs, and Phase 8's graceful-extraction turns a failed model call into a clean
 > `NOT_AVAILABLE` — so a flaky minute silently dropped good flags to NA. A paid
-> OpenAI key removes that failure mode. The free providers stay configured as a
-> **fallback**: `callJSON` falls through the role chain to any other configured
-> provider, so a blank `OPENAI_API_KEY` (`isConfigured() === false`) transparently
-> reverts to the old Gemini/Groq/Mistral/Nvidia routing. Pick a model by ROLE.
+> OpenAI key removes that. **Keep OpenAI OUT of the role table** — overloading
+> several roles onto one provider collapses the de-duped fallback chain (it cut
+> Groq/Gemini out of rotation, so when OpenAI failed nothing covered). Instead
+> `providerChain(role)` prepends OpenAI, then the four DISTINCT free providers
+> follow, so a blank/failing `OPENAI_API_KEY` transparently reverts to the full
+> Gemini/Groq/Mistral/Nvidia chain. `analyze-run` prints an LLM preflight (ping +
+> a 1-token OpenAI probe) so a bad key/model is loud, not silent NA. Pick by ROLE.
 
 **Select an LLM by role, not by name**, so the table can change in one place:
 
 ```ts
 import { llm } from "@/lib/llm";
-await llm.longContext.completeJSON(opts, schema); // OpenAI (primary)
-await llm.bulkClassify.complete(opts);            // OpenAI (primary)
+await llm.longContext.completeJSON(opts, schema); // role -> Gemini (fallback)
+await llm.bulkClassify.complete(opts);            // role -> Groq   (fallback)
+// In the engine, callJSON()/providerChain() prepend OpenAI as the primary.
 ```
 
 ---

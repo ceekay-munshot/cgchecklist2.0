@@ -13,9 +13,43 @@
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "@/lib/db";
+import { llmProviders, openai } from "@/lib/llm";
 import { runAnalysis, drainQueue, isCommitted, type RunOutcome } from "@/lib/orchestrate";
 
 const OUT_DIR = path.join(process.cwd(), "analyze-run-report");
+
+/**
+ * Print each configured LLM provider's health before analysing, so a
+ * misconfigured key (bad/expired key, no model access, no billing) is LOUD in
+ * the job log instead of silently degrading every item to NOT_AVAILABLE. The
+ * primary (OpenAI) also gets a 1-token completion probe, which surfaces chat-API
+ * errors a /models ping can't (404 no-model-access, 429 insufficient_quota).
+ * Best-effort and never fatal.
+ */
+async function preflightProviders(): Promise<void> {
+  const configured = Object.values(llmProviders).filter((p) => p.isConfigured());
+  if (!configured.length) {
+    console.log("LLM preflight: NO providers configured (set OPENAI_API_KEY / GROQ_API_KEY / …).");
+    return;
+  }
+  console.log(`LLM preflight (${configured.length} configured):`);
+  for (const p of configured) {
+    try {
+      const s = await p.ping();
+      console.log(`  ${p.id}: ${s.state}${s.message ? ` — ${s.message}` : ""}`);
+    } catch (e) {
+      console.log(`  ${p.id}: ping threw — ${(e as Error).message}`);
+    }
+  }
+  if (openai.isConfigured()) {
+    try {
+      await openai.complete({ prompt: "ping", maxTokens: 1, temperature: 0 });
+      console.log("  openai completion probe: ok");
+    } catch (e) {
+      console.log(`  openai completion probe FAILED — ${(e as Error).message}`);
+    }
+  }
+}
 
 async function resolveRunId(arg: string): Promise<string | null> {
   const byId = await prisma.analysisRun.findUnique({ where: { id: arg } });
@@ -144,6 +178,8 @@ async function main() {
   // --force / --reset re-evaluates ALL 106 items, ignoring prior DONE status.
   const force = args.includes("--force") || args.includes("--reset");
   const arg = args.find((a) => a && !a.startsWith("--"));
+
+  await preflightProviders();
 
   if (!arg) {
     console.log(`Draining queue (HARVESTED / PARTIAL runs)${force ? " [force]" : ""}…`);
