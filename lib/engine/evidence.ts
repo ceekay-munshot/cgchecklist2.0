@@ -534,6 +534,30 @@ function retrievePassages(docs: SourceDoc[], keywords: string[]): EvidencePassag
 // Web fallback
 // ---------------------------------------------------------------------------
 
+// Generic name words that aren't distinctive enough to match a result on.
+const COMPANY_STOPWORDS = new Set([
+  "limited", "ltd", "services", "service", "company", "corporation", "corp",
+  "industries", "india", "indian", "group", "holdings", "enterprises", "the",
+]);
+
+/** Distinctive lowercased tokens identifying the company (name words + ticker). */
+function companyTokens(company: Company | null): string[] {
+  const toks = new Set<string>();
+  for (const w of (company?.name ?? "").toLowerCase().split(/[^a-z0-9]+/)) {
+    if (w.length >= 4 && !COMPANY_STOPWORDS.has(w)) toks.add(w);
+  }
+  const ticker = (company?.ticker ?? "").toLowerCase();
+  if (ticker.length >= 2) toks.add(ticker);
+  return [...toks];
+}
+
+/** A web hit is relevant only if it actually mentions the company (title/snippet/url). */
+function mentionsCompany(hay: string, tokens: string[]): boolean {
+  if (!tokens.length) return true; // no distinctive token to filter on — don't over-filter
+  const h = hay.toLowerCase();
+  return tokens.some((t) => h.includes(t));
+}
+
 async function getWebEvidence(
   item: EngineItem,
   company: Company | null,
@@ -546,13 +570,18 @@ async function getWebEvidence(
 
   const res = await webResearcher.search(query);
   if (res.status === "ok" && res.results.length) {
-    let passages: EvidencePassage[] = res.results.slice(0, 3).map((h) => ({
+    // Keep only results that actually mention THIS company — drops the off-topic
+    // search noise (e.g. an Instagram post about a different company, a generic
+    // HR blog) that otherwise yields confidently-wrong web verdicts.
+    const tokens = companyTokens(company);
+    const relevant = res.results.filter((h) => mentionsCompany(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, tokens));
+    let passages: EvidencePassage[] = relevant.slice(0, 3).map((h) => ({
       text: [h.title, h.snippet].filter(Boolean).join(" — ").trim(),
       citation: { sourceUrl: h.url },
     }));
     passages = passages.filter((p) => p.text);
-    if (!passages.length) {
-      const top = res.results[0];
+    if (!passages.length && relevant.length) {
+      const top = relevant[0];
       const fetched = await webResearcher.fetchUrl(top.url);
       if (fetched.status === "ok" && fetched.content) {
         passages = [{ text: fetched.content.slice(0, PER_PASSAGE_CHARS), citation: { sourceUrl: top.url } }];

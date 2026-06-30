@@ -17,9 +17,12 @@ import {
   type FlagResult,
 } from "./types";
 
-/** Optional context for flag assignment (company size for materiality scaling). */
+/** Optional context for flag assignment. */
 export interface FlagContext {
+  /** Company size for materiality scaling. */
   scale?: CompanyScale | null;
+  /** True when the evidence came from web research (news/blogs/search snippets). */
+  web?: boolean;
 }
 
 type JudgeFlag = "GREEN" | "RED" | "NEUTRAL";
@@ -140,6 +143,17 @@ export async function assignFlag(
   const guard = guardAmount(item.id, judged.flag, analysis.value, analysis.evidenceQuote, context.scale);
   if (guard) {
     return applyGate(item, { flag: guard.flag, reason: guard.reason, provider: judged.provider });
+  }
+
+  // Web-sourced evidence is noisy (news, blogs, search snippets) — it can inform
+  // a GREEN/NEUTRAL read but must NEVER fire a RED on its own; a governance red
+  // requires audited filings. Downgrade a web-sourced RED to NEUTRAL.
+  if (context.web && judged.flag === "RED") {
+    return applyGate(item, {
+      flag: "NEUTRAL",
+      reason: `Web-sourced signal, not confirmed in filings — not red-flagged. (${judged.reason})`,
+      provider: judged.provider,
+    });
   }
 
   return applyGate(

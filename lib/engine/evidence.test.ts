@@ -148,6 +148,20 @@ describe("getEvidence", () => {
     expect(ev.passages?.[0].citation.sourceUrl).toContain("news.example");
   });
 
+  it("drops off-topic web results that don't mention the company → honest NA", async () => {
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "Tata Consultancy Services", ticker: "TCS" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([]); // no doc fallback
+    vi.mocked(webResearcher.search).mockResolvedValue({
+      status: "ok",
+      query: "q",
+      results: [{ url: "https://instagram.com/p/abc", title: "Fairfax may exit CSB Bank", snippet: "unrelated company news" }],
+    });
+    const ev = await getEvidence(item({ id: "A13-09", outputFormat: "Text" }), "run1");
+    expect(ev.status).toBe("not_available"); // off-topic result filtered out
+  });
+
   it("retrieves matching passages with page citations for a document item", async () => {
     vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([
       sd({

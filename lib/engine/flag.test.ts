@@ -54,6 +54,27 @@ describe("assignFlag", () => {
     expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
   });
 
+  it("never fires a RED from web-sourced evidence (downgrades to NEUTRAL)", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "A news snippet alleges a problem." });
+    const r = await assignFlag(
+      item({ id: "A13-09", outputFormat: "Text", greenFlag: "None", redFlag: "Strong political ties" }),
+      { value: "largest political donor", confidence: "low" },
+      { web: true },
+    );
+    expect(r.flag).toBe("NEUTRAL");
+    expect(r.reason).toMatch(/web-sourced/i);
+  });
+
+  it("still allows a RED from filing-sourced evidence (web flag false)", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Qualified opinion in the audit report." });
+    const r = await assignFlag(
+      item({ id: "A7-09", outputFormat: "Text", greenFlag: "Clean", redFlag: "Adverse" }),
+      { value: "something material", confidence: "high" },
+      { web: false },
+    );
+    expect(r.flag).toBe("RED");
+  });
+
   it("qualitative: an LLM judge decides the flag", async () => {
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "Reputed Big Four auditor." });
     const r = await assignFlag(

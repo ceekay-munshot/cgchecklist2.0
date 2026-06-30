@@ -50,7 +50,7 @@ export async function evaluateItem(item: EngineItem, runId: string): Promise<Ite
     const analysis = await analyzeItem(item, evidence);
     // Company size (Tier-1) lets assignFlag scale ₹-amounts for materiality.
     const scale = await loadCompanyScale(runId);
-    const flagRes = await assignFlag(item, analysis, { scale });
+    const flagRes = await assignFlag(item, analysis, { scale, web: evidence.from === "web" });
 
     const result: ItemEvaluation = {
       itemId: item.id,
