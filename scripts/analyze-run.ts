@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { llmProviders, openai } from "@/lib/llm";
+import { researchers, webResearcher } from "@/lib/scrape";
 import { runAnalysis, drainQueue, isCommitted, type RunOutcome } from "@/lib/orchestrate";
 
 const OUT_DIR = path.join(process.cwd(), "analyze-run-report");
@@ -48,6 +49,36 @@ async function preflightProviders(): Promise<void> {
     } catch (e) {
       console.log(`  openai completion probe FAILED — ${(e as Error).message}`);
     }
+  }
+}
+
+/**
+ * Web-research preflight: ping each configured researcher and run ONE real search
+ * through the composed chain, so a dead/empty web path (bad key, wrong endpoint,
+ * changed response shape) is visible in the log instead of silently turning the
+ * web/market-data items into "Expected NA". Best-effort and never fatal.
+ */
+async function preflightWeb(): Promise<void> {
+  const configured = Object.values(researchers).filter((r) => r.isConfigured());
+  if (!configured.length) {
+    console.log("Web preflight: NO researcher configured — web items will be Expected NA (set FIRECRAWL_API_KEY for search).");
+    return;
+  }
+  console.log(`Web preflight (${configured.length} configured):`);
+  for (const r of configured) {
+    try {
+      const s = await r.ping();
+      console.log(`  ${r.id}: ${s.state}${s.message ? ` — ${s.message}` : ""}`);
+    } catch (e) {
+      console.log(`  ${r.id}: ping threw — ${(e as Error).message}`);
+    }
+  }
+  try {
+    const res = await webResearcher.search("Tata Consultancy Services promoter Tata Sons");
+    console.log(`  search probe: ${res.status} — ${res.results.length} result(s)${res.error ? ` — ${res.error}` : ""}`);
+    if (res.results[0]) console.log(`    top: ${res.results[0].url}`);
+  } catch (e) {
+    console.log(`  search probe threw — ${(e as Error).message}`);
   }
 }
 
@@ -180,6 +211,7 @@ async function main() {
   const arg = args.find((a) => a && !a.startsWith("--"));
 
   await preflightProviders();
+  await preflightWeb();
 
   if (!arg) {
     console.log(`Draining queue (HARVESTED / PARTIAL runs)${force ? " [force]" : ""}…`);

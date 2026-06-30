@@ -71,13 +71,26 @@ async function search(query: string): Promise<SearchResult> {
     if (!res.ok) {
       return { status: "not_available", query, provider: "firecrawl", results: [], error: `HTTP ${res.status}` };
     }
+    // Firecrawl's /search has shipped a few response shapes: a flat `data: []`,
+    // and a categorised `data: { web: [], news: [] }` (and occasionally a
+    // top-level `web: []`). Accept all so a shape change can't silently yield
+    // zero results on an HTTP 200.
+    type FcHit = { url?: string; title?: string; description?: string; snippet?: string };
     const data = (await res.json()) as {
       success?: boolean;
-      data?: Array<{ url?: string; title?: string; description?: string }>;
+      data?: FcHit[] | { web?: FcHit[]; news?: FcHit[] };
+      web?: FcHit[];
     };
-    const results = (data.data ?? [])
-      .filter((r): r is { url: string; title?: string; description?: string } => !!r.url)
-      .map((r) => ({ url: r.url, title: r.title, snippet: r.description }));
+    const arr: FcHit[] = Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data.data?.web)
+        ? data.data.web
+        : Array.isArray(data.web)
+          ? data.web
+          : [];
+    const results = arr
+      .filter((r): r is FcHit & { url: string } => !!r.url)
+      .map((r) => ({ url: r.url, title: r.title, snippet: r.description ?? r.snippet }));
     return { status: "ok", query, provider: "firecrawl", results };
   } catch (e) {
     return { status: "not_available", query, provider: "firecrawl", results: [], error: (e as Error).message };
