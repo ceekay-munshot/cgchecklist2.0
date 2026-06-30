@@ -81,6 +81,12 @@ describe("evidenceStrategyFor — routing per item", () => {
     // a normal filing item is NOT marked expected-NA
     expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).expectedNa).toBeFalsy();
   });
+  it("gives A2-01 a note-window strategy so the committee table can be read", () => {
+    const s = evidenceStrategyFor(item({ id: "A2-01", outputFormat: "Yes/No + count" }));
+    expect(s.from).toBe("document");
+    expect(s.useGeminiNote).toBe(true);
+    expect(s.sections?.some((h) => h.includes("audit committee"))).toBe(true);
+  });
   it("routes promoter/management-quality items (A13, A9-04) to the web fallback too — doc first, then web", () => {
     for (const id of ["A9-04", "A13-01", "A13-03", "A13-06", "A13-09"]) {
       const s = evidenceStrategyFor(item({ id, sectionCode: id.slice(0, id.indexOf("-")), outputFormat: "Text" }));
@@ -146,6 +152,20 @@ describe("getEvidence", () => {
     expect(ev.from).toBe("web");
     expect(webResearcher.search).toHaveBeenCalled();
     expect(ev.passages?.[0].citation.sourceUrl).toContain("news.example");
+  });
+
+  it("drops social/UGC domains (facebook/instagram/…) as web sources → honest NA", async () => {
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "Tata Consultancy Services", ticker: "TCS" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([]);
+    vi.mocked(webResearcher.search).mockResolvedValue({
+      status: "ok",
+      query: "q",
+      results: [{ url: "https://www.facebook.com/groups/123/posts/456", title: "TCS bench strength", snippet: "TCS hiring" }],
+    });
+    const ev = await getEvidence(item({ id: "A13-05", outputFormat: "Text" }), "run1");
+    expect(ev.status).toBe("not_available"); // facebook source blocked
   });
 
   it("drops off-topic web results that don't mention the company → honest NA", async () => {

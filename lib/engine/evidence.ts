@@ -61,6 +61,16 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
       "rotation of auditor",
     ],
   },
+  // Audit-committee composition lives in a table in the corporate-governance
+  // report — give it a large note window so the dedicated A2-01 extractor can
+  // reconstruct independent/total members + meetings from the flattened table.
+  "A2-01": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["audit committee", "composition of the audit committee", "audit committee comprises", "audit committee of the board"],
+    keywords: ["audit committee", "independent director", "met", "meetings", "attendance", "chairperson", "members"],
+    useGeminiNote: true,
+  },
   // Qualitative; document first, web fallback, else not available
   "A13-02": {
     from: "document",
@@ -534,6 +544,24 @@ function retrievePassages(docs: SourceDoc[], keywords: string[]): EvidencePassag
 // Web fallback
 // ---------------------------------------------------------------------------
 
+// Social / user-generated / low-credibility hosts: never a governance source.
+const BLOCKED_WEB_HOSTS = [
+  "facebook.com", "instagram.com", "twitter.com", "x.com", "reddit.com",
+  "quora.com", "pinterest.com", "tiktok.com", "youtube.com", "linkedin.com",
+  "threads.net",
+];
+
+/** True if the URL's host is a blocked social/UGC domain. */
+function isBlockedHost(url: string): boolean {
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    host = url.toLowerCase();
+  }
+  return BLOCKED_WEB_HOSTS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
 // Generic name words that aren't distinctive enough to match a result on.
 const COMPANY_STOPWORDS = new Set([
   "limited", "ltd", "services", "service", "company", "corporation", "corp",
@@ -574,7 +602,9 @@ async function getWebEvidence(
     // search noise (e.g. an Instagram post about a different company, a generic
     // HR blog) that otherwise yields confidently-wrong web verdicts.
     const tokens = companyTokens(company);
-    const relevant = res.results.filter((h) => mentionsCompany(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, tokens));
+    const relevant = res.results.filter(
+      (h) => !isBlockedHost(h.url) && mentionsCompany(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, tokens),
+    );
     let passages: EvidencePassage[] = relevant.slice(0, 3).map((h) => ({
       text: [h.title, h.snippet].filter(Boolean).join(" — ").trim(),
       citation: { sourceUrl: h.url },

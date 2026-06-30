@@ -98,10 +98,8 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   if (evidence.from === "screener" && evidence.structured) {
     return analyzeScreener(evidence);
   }
-  // Table-heavy financial-statement notes → Gemini reads the note's figures.
-  if (evidence.mode === "note") {
-    return analyzeNote(item, evidence);
-  }
+  // Item-specific extractors run FIRST — even when their evidence is a large
+  // "note" window — so the generic note/figure reader below doesn't hijack them.
   // Board composition is the one numeric-from-document extractor (A1-01).
   if (item.id === "A1-01") {
     return analyzeNumericFromPassages(item, evidence);
@@ -111,6 +109,10 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   // A2-01 categorical rule can decide compliance instead of returning NA.
   if (item.id === "A2-01") {
     return analyzeAuditCommittee(item, evidence);
+  }
+  // Table-heavy financial-statement notes → Gemini reads the note's figures.
+  if (evidence.mode === "note") {
+    return analyzeNote(item, evidence);
   }
   return analyzeQualitative(item, evidence);
 }
