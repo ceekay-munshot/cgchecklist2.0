@@ -13,6 +13,7 @@ vi.mock("@/lib/scrape", () => ({
 
 import { evidenceStrategyFor, getEvidence } from "./evidence";
 import { prisma } from "@/lib/db";
+import { webResearcher } from "@/lib/scrape";
 import type { EngineItem } from "./types";
 
 function item(p: Partial<EngineItem> & { id: string }): EngineItem {
@@ -124,6 +125,27 @@ describe("getEvidence", () => {
     ]);
     const ev = await getEvidence(item({ id: "A4-01", outputFormat: "Yes/No" }), "run1");
     expect(ev.status).toBe("not_available");
+  });
+
+  it("searches the WEB FIRST for a web-only item, even when a tangential filing section exists", async () => {
+    // A "board of directors" section exists (would otherwise be 'found' and
+    // pre-empt the web) — but A13-09 is a web/market-data item, so web wins.
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "Tata Consultancy Services", ticker: "TCS" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([
+      sd({ id: "ar1", type: "ANNUAL_REPORT", sourceUrl: "u", name: "AR", extractedText: "===== PAGE 9 =====\nBoard of Directors composition and meetings 6 times." }),
+    ]);
+    vi.mocked(webResearcher.search).mockResolvedValue({
+      status: "ok",
+      query: "q",
+      results: [{ url: "https://news.example/tcs-politics", title: "TCS", snippet: "No political affiliations reported." }],
+    });
+    const ev = await getEvidence(item({ id: "A13-09", outputFormat: "Text" }), "run1");
+    expect(ev.status).toBe("found");
+    expect(ev.from).toBe("web");
+    expect(webResearcher.search).toHaveBeenCalled();
+    expect(ev.passages?.[0].citation.sourceUrl).toContain("news.example");
   });
 
   it("retrieves matching passages with page citations for a document item", async () => {

@@ -213,6 +213,21 @@ export async function getEvidence(item: EngineItem, runId: string): Promise<Evid
     return getScreenerEvidence(runId, strategy, kind);
   }
 
+  // Web-PRIMARY items (designated web/market-data: promoter vintage/family/
+  // political, SEBI history, attrition, analyst coverage, marquee investors).
+  // The filing rarely covers these, and a loosely-related section (e.g. "board
+  // of directors") would otherwise pre-empt the web and yield a NA — so search
+  // the WEB FIRST, then fall back to the document, then an honest Expected-NA.
+  if (strategy.expectedNa && strategy.webFallback) {
+    const company = await loadCompany(runId);
+    const web = await getWebEvidence(item, company, strategy, kind);
+    if (web.status === "found") return web;
+    const docFb = await getDocumentEvidence(runId, strategy, kind);
+    if (docFb.status === "found") return docFb;
+    return { status: "not_available", from: "web", kind, note: web.note ?? docFb.note };
+  }
+
+  // Filing-PRIMARY items: document first, then an optional web fallback.
   const doc = await getDocumentEvidence(runId, strategy, kind);
   if (doc.status === "found") return doc;
 
