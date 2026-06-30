@@ -18,7 +18,7 @@ export const openai = createOpenAICompatibleProvider({
   label: "OpenAI",
   role: "primary (analysis extraction + judgment)",
   baseUrl: "https://api.openai.com/v1",
-  defaultModel: "gpt-5.4",
+  defaultModel: "gpt-4o",
   apiKeyEnv: "OPENAI_API_KEY",
   modelEnv: "OPENAI_MODEL",
 });
