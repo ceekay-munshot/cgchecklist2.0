@@ -7,17 +7,18 @@ import { createOpenAICompatibleProvider } from "./openai-compatible";
  * the standard Chat Completions API, so the shared OpenAI-compatible factory
  * covers it — key/model are read from env at call time.
  *
- * Default model is a strong general chat model that supports `temperature` +
- * JSON `response_format`. Override with OPENAI_MODEL (e.g. a newer flagship)
- * — but note the o-series *reasoning* models reject those params and would need
- * the factory adjusted, so keep OPENAI_MODEL on a gpt-4o / gpt-4.1-class model.
+ * Default model is a strong general chat model. Override with OPENAI_MODEL.
+ * If a chosen model rejects the `temperature` / `max_tokens` / JSON
+ * `response_format` params the shared factory sends, the LLM preflight in
+ * analyze-run surfaces the error (and the free-provider fallback still serves),
+ * so a bad model id/param is loud rather than a silent all-NA run.
  */
 export const openai = createOpenAICompatibleProvider({
   id: "openai",
   label: "OpenAI",
   role: "primary (analysis extraction + judgment)",
   baseUrl: "https://api.openai.com/v1",
-  defaultModel: "gpt-4o",
+  defaultModel: "gpt-5.4",
   apiKeyEnv: "OPENAI_API_KEY",
   modelEnv: "OPENAI_MODEL",
 });

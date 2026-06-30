@@ -248,7 +248,7 @@ Enums: `Flag`, `Exchange`, `RunStatus`, `SourceDocType`, `FetchedVia`,
 `OPENAI_API_KEY` (primary analysis provider), `GEMINI_API_KEY`, `GROQ_API_KEY`,
 `MISTRAL_API_KEY`, `NVIDIA_API_KEY`, `FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`,
 `SCREENER_EMAIL`, `SCREENER_PASSWORD`, `DATABASE_URL`.
-Optional model overrides: `OPENAI_MODEL` (default `gpt-4o`), `GEMINI_MODEL`,
+Optional model overrides: `OPENAI_MODEL` (default `gpt-5.4`), `GEMINI_MODEL`,
 `GROQ_MODEL`, `MISTRAL_MODEL`, `NVIDIA_MODEL`. Optional cost ceiling:
 `OPENAI_DAILY_CAP` (per-day request cap; unset = effectively uncapped). Copy `.env.example` → `.env` and fill in. `/health` shows any
 blank provider as **not configured**. `SCREENER_*` feed the Phase-3 Playwright
