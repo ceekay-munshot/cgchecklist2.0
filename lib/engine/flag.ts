@@ -63,11 +63,13 @@ async function judge(
   item: EngineItem,
   analysis: Analysis,
   role: "reasoning" | "bulkClassify" | "fallback" | "longContext",
+  callOpts?: { excludePrimary?: boolean },
 ): Promise<{ flag: JudgeFlag; reason: string; provider: string }> {
   const { data, provider } = await callJSON<JudgeResult>(
     role,
     { prompt: judgePrompt(item, analysis), temperature: 0 },
     JUDGE_SCHEMA,
+    callOpts,
   );
   return { flag: data.flag, reason: data.reason, provider };
 }
@@ -159,8 +161,9 @@ export async function assignFlag(
   return applyGate(
     item,
     { flag: judged.flag, reason: judged.reason, provider: judged.provider },
-    // cross-check a non-negotiable RED with a different, cheaper model
-    () => judge(item, analysis, "bulkClassify"),
+    // EVERY qualitative RED is cross-checked by a DIFFERENT model (primary
+    // excluded) — a one-off judge misfire can't stand as a red.
+    () => judge(item, analysis, "bulkClassify", { excludePrimary: true }),
   );
 }
 
@@ -173,18 +176,21 @@ async function applyGate(
   let providerUsed = base.provider;
   let needsReview = false;
 
-  if (item.isNonNegotiable && flag === "RED" && crossCheck) {
+  // Cross-check EVERY qualitative RED with a second (different) model; a red
+  // stands only if confirmed. Disagreement → NEUTRAL + needs-review. A transient
+  // cross-check failure keeps the RED (don't suppress a real red) but flags it.
+  if (flag === "RED" && crossCheck) {
     try {
       const second = await crossCheck();
       providerUsed = providerUsed ? `${providerUsed}+${second.provider}` : second.provider;
       if (second.flag !== "RED") {
         flag = "NEUTRAL";
         needsReview = true;
-        reason = `Non-negotiable RED not confirmed on cross-check (${second.provider} said ${second.flag}) — needs review. Original: ${reason}`;
+        reason = `RED not confirmed on cross-check (${second.provider} said ${second.flag}) — downgraded to NEUTRAL for review. Original: ${reason}`;
       }
     } catch {
       needsReview = true;
-      reason = `Non-negotiable RED could not be cross-checked — needs review. Original: ${reason}`;
+      reason = `RED could not be cross-checked — needs review. Original: ${reason}`;
     }
   }
 

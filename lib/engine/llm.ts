@@ -42,14 +42,23 @@ function sleep(ms: number): Promise<void> {
  * persistently rate-limited) — so the orchestrator DEFERS the item. A genuine
  * provider error (bad JSON, 5xx) is thrown as-is so the item is recorded ERROR.
  */
+/** Options affecting which providers a call may use. */
+export interface CallOptions {
+  /** Exclude the paid primary (OpenAI) — used to get a genuine SECOND opinion
+   *  from a different model when cross-checking a RED. */
+  excludePrimary?: boolean;
+}
+
 /**
  * Ordered, de-duped, CONFIGURED provider chain for a role: OpenAI (the paid
  * primary) first when configured, then the role's free-provider fallback order.
  * A blank OPENAI_API_KEY drops OpenAI out, reverting to the pure free-tier chain.
+ * `excludePrimary` omits OpenAI so a cross-check runs on a different model.
  */
-export function providerChain(role: LlmRole): ProviderModule[] {
+export function providerChain(role: LlmRole, opts: CallOptions = {}): ProviderModule[] {
   const seen = new Set<string>();
-  return [openai, ...ROLE_CHAINS[role].map((r) => llm[r])].filter((c) => {
+  const primary = opts.excludePrimary ? [] : [openai];
+  return [...primary, ...ROLE_CHAINS[role].map((r) => llm[r])].filter((c) => {
     if (!c || seen.has(c.id)) return false;
     seen.add(c.id);
     return c.isConfigured();
@@ -60,8 +69,9 @@ export async function callJSON<T>(
   role: LlmRole,
   opts: CompleteOpts,
   schema: object,
+  callOpts: CallOptions = {},
 ): Promise<{ data: T; provider: string }> {
-  const chain = providerChain(role);
+  const chain = providerChain(role, callOpts);
   if (chain.length === 0) {
     throw new QuotaExhaustedError(`no LLM provider configured for role "${role}"`);
   }

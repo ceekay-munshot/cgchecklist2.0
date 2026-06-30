@@ -120,13 +120,9 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
     docTypes: ["EARNINGS_PDF", "ANNUAL_REPORT"],
     keywords: ["guidance", "outlook", "demand", "margin", "deal", "commentary", "we expect", "management"],
   },
-  // Rating actions — read the harvested credit-rating (ICRA) announcements.
-  "A9-05": {
-    from: "document",
-    docTypes: ["ANNOUNCEMENT"],
-    sections: ["rating", "rationale", "outlook"],
-    keywords: ["rating", "reaffirmed", "aaa", "a1+", "downgrade", "upgrade", "withdrawn", "outlook stable"],
-  },
+  // (A9-05 rating actions intentionally NOT routed to the harvested ICRA doc —
+  // that rationale lists OTHER companies and produced a false red; honest NA
+  // until a TCS-specific rating source is harvested.)
   // Audit-committee composition lives in a table in the corporate-governance
   // report — give it a large note window so the dedicated A2-01 extractor can
   // reconstruct independent/total members + meetings from the flattened table.

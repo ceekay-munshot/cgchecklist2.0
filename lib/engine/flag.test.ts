@@ -65,14 +65,28 @@ describe("assignFlag", () => {
     expect(r.reason).toMatch(/web-sourced/i);
   });
 
-  it("still allows a RED from filing-sourced evidence (web flag false)", async () => {
+  it("allows a filing RED when a different model CONFIRMS it on cross-check", async () => {
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Qualified opinion in the audit report." });
+    asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Cross-check agrees — qualified." });
     const r = await assignFlag(
       item({ id: "A7-09", outputFormat: "Text", greenFlag: "Clean", redFlag: "Adverse" }),
       { value: "something material", confidence: "high" },
       { web: false },
     );
     expect(r.flag).toBe("RED");
+    expect(asMock(llm.bulkClassify.completeJSON)).toHaveBeenCalledTimes(1); // cross-checked
+  });
+
+  it("downgrades a one-off filing RED to NEUTRAL when the cross-check model disagrees", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Misread 'restatement' as adverse." });
+    asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "Restatement is for comparability — fine." });
+    const r = await assignFlag(
+      item({ id: "A7-05", outputFormat: "Text", greenFlag: "Consistent", redFlag: "Contradictory" }),
+      { value: "restatement for consistency and comparability", confidence: "medium" },
+      { web: false },
+    );
+    expect(r.flag).toBe("NEUTRAL");
+    expect(r.needsReview).toBe(true);
   });
 
   it("qualitative: an LLM judge decides the flag", async () => {
