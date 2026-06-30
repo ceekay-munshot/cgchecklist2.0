@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { listCompanyCards, type CompanyCard } from "@/lib/report";
+import SearchLauncher from "@/app/components/SearchLauncher";
 
 export default async function Home() {
   await connection();
@@ -29,6 +30,7 @@ export default async function Home() {
           <span className="font-semibold text-amber-600">neutral</span> flag with a verdict, evidence and source.{" "}
           <span className="text-slate-400">No numeric scoring.</span>
         </p>
+        <SearchLauncher />
       </section>
 
       {/* Companies */}
@@ -49,7 +51,7 @@ export default async function Home() {
           <EmptyPanel
             emoji="🌱"
             title="No reports yet"
-            body="Run a harvest + analysis (Actions → analyze-run) and the company will appear here automatically."
+            body="Search any company above to run its first analysis — it’ll appear here once complete."
           />
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
