@@ -267,9 +267,37 @@ export function auditCommitteeFlag(value: string, evidenceQuote: string | null |
   return { flag: "NEUTRAL", reason: `Audit committee is ${pctStr} — majority but below the 2/3 independence norm.` };
 }
 
+/**
+ * A3-05 Cheap insider equity. The red is "repeated discounted insider issues"
+ * (preferential allotments / warrants to PROMOTERS at a discount). An over-eager
+ * judge red-flagged a bare mention of "preference shares issued" (e.g. a
+ * subsidiary's Class-B CCPS in the consolidated notes) that has nothing to do
+ * with cheap promoter equity. Decide deterministically: a RED requires BOTH an
+ * insider beneficiary AND preferential/discounted pricing; a clean "none /
+ * at-market" disclosure is GREEN; anything else is NEUTRAL — never a red on an
+ * unsubstantiated mention.
+ */
+export function cheapInsiderEquityFlag(value: string, evidenceQuote: string | null | undefined): MaterialityResult {
+  const text = `${value} ${evidenceQuote ?? ""}`.toLowerCase();
+  if (/\b(no preferential|none|not issued|no warrants|at[ -]market|no cheap|no discounted)\b/.test(text)) {
+    return { flag: "GREEN", reason: `No preferential/discounted issuance to insiders disclosed (${value}).` };
+  }
+  // Stems (no trailing \b) so plurals match: promoter→promoters, warrant→warrants.
+  const insider = /\b(promoter|insider|related part|key managerial|kmp)/.test(text);
+  const cheap =
+    /\b(preferential allotment|preferential issue|preferential basis|warrant|at a discount|discounted|below market|at a price lower)/.test(
+      text,
+    );
+  if (insider && cheap) {
+    return { flag: "RED", reason: `Preferential/discounted equity or warrants issued to insiders/promoters (${value}).` };
+  }
+  return { flag: "NEUTRAL", reason: `No discounted insider/promoter issuance identified (${value}).` };
+}
+
 export const CATEGORICAL_RULES: Record<
   string,
   (value: string, evidenceQuote: string | null | undefined) => MaterialityResult
 > = {
   "A2-01": auditCommitteeFlag,
+  "A3-05": cheapInsiderEquityFlag,
 };

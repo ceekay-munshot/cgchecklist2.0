@@ -122,7 +122,11 @@ async function writeReport(runId: string, outcome: RunOutcome) {
       const statusTag = it.flag
         ? it.flag
         : `${it.status}${it.staleFlag ? ` (stale ${it.staleFlag})` : ""}`;
-      lines.push(`- **${it.id}** ${statusTag}: ${it.item} — ${it.value ?? "—"}${src}`);
+      // A bare "not available" value is uninformative — fall back to the verdict,
+      // which carries the honest detail (e.g. "Expected NA — … web/market-data item").
+      const answered = it.value && it.value.toLowerCase() !== "not available" ? it.value : null;
+      const detail = answered ?? it.verdict ?? it.value ?? "—";
+      lines.push(`- **${it.id}** ${statusTag}: ${it.item} — ${detail}${src}`);
     }
     lines.push("");
   }

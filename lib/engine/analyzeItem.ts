@@ -106,6 +106,12 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   if (item.id === "A1-01") {
     return analyzeNumericFromPassages(item, evidence);
   }
+  // Audit-committee composition lives in a governance-report table; extract the
+  // quantified facts (independent/total members, meetings) so the deterministic
+  // A2-01 categorical rule can decide compliance instead of returning NA.
+  if (item.id === "A2-01") {
+    return analyzeAuditCommittee(item, evidence);
+  }
   return analyzeQualitative(item, evidence);
 }
 
@@ -203,6 +209,74 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
     confidence: counts ? "high" : "medium",
+    providerUsed: provider,
+  };
+}
+
+// ---- audit committee composition (A2-01; Groq structured extraction) ----
+
+interface AuditCommitteeExtract {
+  relevant: boolean;
+  found: boolean;
+  independentMembers?: number | null;
+  totalMembers?: number | null;
+  meetings?: number | null;
+  evidenceQuote?: string;
+  page?: number | null;
+}
+
+const AUDIT_COMMITTEE_SCHEMA = {
+  type: "object",
+  properties: {
+    relevant: { type: "boolean" },
+    found: { type: "boolean" },
+    independentMembers: { type: ["integer", "null"] },
+    totalMembers: { type: ["integer", "null"] },
+    meetings: { type: ["integer", "null"] },
+    evidenceQuote: { type: "string" },
+    page: { type: ["integer", "null"] },
+  },
+  required: ["relevant", "found"],
+  additionalProperties: false,
+} as const;
+
+async function analyzeAuditCommittee(item: EngineItem, evidence: Evidence): Promise<Analysis> {
+  const passages = evidence.passages ?? [];
+  if (!passages.length) return NA;
+
+  const prompt =
+    `You are reading the Corporate Governance Report of an annual report.\n` +
+    `Checklist item: ${item.item}\n` +
+    (item.description ? `Definition: ${item.description}\n` : "") +
+    `\nFIRST decide if these excerpts actually describe the AUDIT COMMITTEE (not the ` +
+    `board overall or another committee); if not, set "relevant" to false.\n` +
+    `If relevant, from the Audit Committee composition table determine: the number of ` +
+    `INDEPENDENT directors on the audit committee ("independentMembers"), the TOTAL number ` +
+    `of audit-committee members ("totalMembers"), and the number of audit-committee MEETINGS ` +
+    `held during the year ("meetings"). Use null for any value the excerpts do not state, and ` +
+    `set "found" to false only if none of these are present. Put the exact supporting line ` +
+    `(<=200 chars) in "evidenceQuote" and its page in "page".\n\n` +
+    passagesBlock(passages);
+
+  // Quota errors propagate (→ DEFER); a genuine provider failure degrades to NA.
+  const res = await extract<AuditCommitteeExtract>("bulkClassify", { prompt, temperature: 0 }, AUDIT_COMMITTEE_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
+  if (!data.relevant || !data.found) return NA;
+
+  const parts: string[] = [];
+  if (data.independentMembers != null && data.totalMembers != null) {
+    parts.push(`${data.independentMembers} of ${data.totalMembers} independent`);
+  }
+  if (data.meetings != null) parts.push(`met ${data.meetings} times`);
+  // Nothing quantified — let the categorical rule read it as "unquantified" (NEUTRAL),
+  // which is still more honest than a silent NA.
+  const value = parts.length ? parts.join(", ") : (data.evidenceQuote ?? "Audit committee composition disclosed");
+  return {
+    value,
+    evidenceQuote: data.evidenceQuote,
+    citation: citationForPage(evidence, data.page),
+    confidence: parts.length ? "high" : "low",
     providerUsed: provider,
   };
 }

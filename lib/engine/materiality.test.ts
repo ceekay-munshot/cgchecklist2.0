@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
 import {
   auditCommitteeFlag,
+  CATEGORICAL_RULES,
+  cheapInsiderEquityFlag,
   classifyAmount,
   companyScaleFrom,
   extractAmountCr,
@@ -122,5 +124,24 @@ describe("auditCommitteeFlag (A2-01) — compliant ≠ red", () => {
   });
   it("is NEUTRAL (not a false red) when composition can't be quantified", () => {
     expect(auditCommitteeFlag("audit committee is active and effective", null).flag).toBe("NEUTRAL");
+  });
+});
+
+describe("cheapInsiderEquityFlag (A3-05) — only a real promoter discount is a red", () => {
+  it("is registered as the deterministic A3-05 categorical rule", () => {
+    expect(CATEGORICAL_RULES["A3-05"]).toBe(cheapInsiderEquityFlag);
+  });
+  it("does NOT red on a bare preference-share mention (the TCS false positive)", () => {
+    // Class-B CCPS in the consolidated notes is not a discounted promoter issue.
+    expect(cheapInsiderEquityFlag("Class B compulsorily convertible preference shares issued", null).flag).toBe(
+      "NEUTRAL",
+    );
+  });
+  it("REDs only when insiders/promoters got preferential or discounted equity", () => {
+    expect(cheapInsiderEquityFlag("Warrants allotted to promoters at a discount", null).flag).toBe("RED");
+    expect(cheapInsiderEquityFlag("Preferential allotment to a promoter group entity", null).flag).toBe("RED");
+  });
+  it("GREENs a clean 'none / at-market' disclosure", () => {
+    expect(cheapInsiderEquityFlag("No preferential allotment or warrants to promoters", null).flag).toBe("GREEN");
   });
 });
