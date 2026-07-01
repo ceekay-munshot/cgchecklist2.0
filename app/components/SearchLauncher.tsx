@@ -118,7 +118,7 @@ export default function SearchLauncher() {
   return (
     <>
       <div ref={containerRef} className="relative mt-8 w-full max-w-xl">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔎</span>
             <input
@@ -139,55 +139,54 @@ export default function SearchLauncher() {
               aria-autocomplete="list"
               className="w-full rounded-2xl border border-slate-200 bg-white/80 py-3.5 pl-11 pr-4 text-sm font-medium text-slate-800 shadow-sm outline-none ring-indigo-100 backdrop-blur transition placeholder:font-normal placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4"
             />
+            {showList && (
+              <ul
+                id={listboxId}
+                role="listbox"
+                className="absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+              >
+                {loading && suggestions.length === 0 && (
+                  <li className="flex items-center gap-2 px-4 py-3 text-xs text-slate-400">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500" /> Searching…
+                  </li>
+                )}
+                {!loading && searched && suggestions.length === 0 && (
+                  <li className="px-4 py-3 text-xs text-slate-400">No matches found.</li>
+                )}
+                {suggestions.map((s, idx) => (
+                  <li
+                    key={s.ticker}
+                    role="option"
+                    aria-selected={idx === activeIndex}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pick(s);
+                    }}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 transition ${idx === activeIndex ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">{s.name}</p>
+                      {s.industry ? <p className="mt-0.5 truncate text-[11px] text-slate-400">{s.industry}</p> : null}
+                    </div>
+                    <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+                      {s.ticker}
+                      {s.country ? <span className="ml-1 font-sans text-slate-400">· {s.country === "India" ? "IN" : s.country}</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <button
             type="button"
             onClick={analyse}
             disabled={busy || !(selectedTicker || query.trim())}
-            className="shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             {busy ? "Starting…" : "Analyse →"}
           </button>
         </div>
-
-        {showList && (
-          <ul
-            id={listboxId}
-            role="listbox"
-            className="absolute left-0 right-0 top-full z-30 mt-2 max-h-80 overflow-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
-          >
-            {loading && suggestions.length === 0 && (
-              <li className="flex items-center gap-2 px-4 py-3 text-xs text-slate-400">
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500" /> Searching…
-              </li>
-            )}
-            {!loading && searched && suggestions.length === 0 && (
-              <li className="px-4 py-3 text-xs text-slate-400">No matches found.</li>
-            )}
-            {suggestions.map((s, idx) => (
-              <li
-                key={s.ticker}
-                role="option"
-                aria-selected={idx === activeIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(s);
-                }}
-                onMouseEnter={() => setActiveIndex(idx)}
-                className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 transition ${idx === activeIndex ? "bg-indigo-50" : "hover:bg-slate-50"}`}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">{s.name}</p>
-                  {s.industry ? <p className="mt-0.5 truncate text-[11px] text-slate-400">{s.industry}</p> : null}
-                </div>
-                <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
-                  {s.ticker}
-                  {s.country ? <span className="ml-1 font-sans text-slate-400">· {s.country === "India" ? "IN" : s.country}</span> : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
 
       {error && <p className="mt-2 text-sm font-medium text-rose-600">⚠️ {error}</p>}
