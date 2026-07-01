@@ -26,15 +26,36 @@ function providersFrom(analysis: Analysis, flagRes: FlagResult): string[] {
   return [...set];
 }
 
-function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: FlagResult): string {
+/**
+ * The reader-facing answer. When the extractor produced a reasoned `rationale`
+ * (the specific figures/dates and why they matter) we lead with it and append
+ * the flag engine's compliance reason — giving a detailed 2-3 sentence answer.
+ * Otherwise we fall back to the concise `value — reason` one-liner.
+ */
+export function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: FlagResult): string {
   if (flagRes.flag === "NOT_AVAILABLE") {
     return evidenceStrategyFor(item).expectedNa
       ? "Expected NA — not disclosed in filings; this is a web/market-data item."
       : "Not available — no supporting evidence found.";
   }
+  const reason = (flagRes.reason ?? "").trim();
+  const rationale = analysis.rationale?.trim();
+  if (rationale) {
+    const withReason =
+      reason && !rationale.toLowerCase().includes(reason.toLowerCase())
+        ? `${rationale} ${reason}`
+        : rationale;
+    return withReason.slice(0, 600);
+  }
+  const value = (analysis.value ?? "").trim();
+  const hasValue = value && value.toLowerCase() !== "not available";
   const v =
-    kindOf(item) === "NUMERIC" ? flagRes.reason : `${analysis.value} — ${flagRes.reason}`;
-  return v.slice(0, 280);
+    kindOf(item) === "NUMERIC" || !hasValue
+      ? reason || value
+      : reason && !reason.includes(value)
+        ? `${value} — ${reason}`
+        : value;
+  return v.slice(0, 600);
 }
 
 /**

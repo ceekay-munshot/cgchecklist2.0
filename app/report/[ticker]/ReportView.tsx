@@ -195,7 +195,9 @@ function ItemRow({ it }: { it: ReportItem }) {
   const f = effective(it);
   const meta = FLAG[f];
   const stale = !it.flag && !!it.staleFlag;
-  const detail = it.value && it.value.toLowerCase() !== "not available" ? it.value : it.verdict;
+  // Lead with the reasoned narrative (verdict); fall back to the concise value.
+  const detail =
+    it.verdict && it.verdict.toLowerCase() !== "not available" ? it.verdict : it.value;
 
   return (
     <li className="flex gap-4 px-5 py-4 transition hover:bg-slate-50/70">

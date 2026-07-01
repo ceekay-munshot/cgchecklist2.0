@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { analyzeItem } from "@/lib/engine/analyzeItem";
+import { buildVerdict } from "@/lib/engine/evaluateItem";
 import { assignFlag } from "@/lib/engine/flag";
 import { loadCompanyScale } from "@/lib/engine/evidence";
 import { fromPrismaItem, kindOf, type Evidence } from "@/lib/engine/types";
@@ -113,7 +114,7 @@ export async function munsBackfill(
       // Only WRITE when we produced a real verdict — never overwrite a blank with a blank.
       if (flagRes.flag === "NOT_AVAILABLE") continue;
 
-      const verdict = (kindOf(engineItem) === "NUMERIC" ? flagRes.reason : `${analysis.value} — ${flagRes.reason}`).slice(0, 280);
+      const verdict = buildVerdict(engineItem, analysis, flagRes);
       const providers = ["muns", analysis.providerUsed].filter(Boolean).join("+");
       await persist(runId, it.id, {
         status: flagRes.needsReview ? "NEEDS_REVIEW" : "DONE",

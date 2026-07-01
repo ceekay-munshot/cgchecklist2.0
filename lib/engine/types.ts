@@ -140,6 +140,13 @@ export interface Evidence {
 export interface Analysis {
   /** Concise fact, or the literal "not available". */
   value: string;
+  /**
+   * A 2-3 sentence reasoned narrative for the human report — the specific
+   * facts, figures, dates and names from the evidence and why they matter,
+   * WITHOUT declaring the green/red verdict (that's the flag engine's job).
+   * Optional: numeric/deterministic extractors leave it unset.
+   */
+  rationale?: string;
   evidenceQuote?: string;
   citation?: EvidenceCitation;
   confidence: Confidence;

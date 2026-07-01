@@ -206,8 +206,13 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
     data.independentDirectors && data.totalDirectors
       ? ` (${data.independentDirectors} of ${data.totalDirectors})`
       : "";
+  const rationale =
+    data.independentDirectors && data.totalDirectors
+      ? `The board comprises ${data.totalDirectors} directors, of whom ${data.independentDirectors} are independent — ${round1(pct)}% independent representation.`
+      : `Independent directors make up ${round1(pct)}% of the board.`;
   return {
     value: `${round1(pct)}% independent${counts}`,
+    rationale,
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
     confidence: counts ? "high" : "medium",
@@ -274,8 +279,16 @@ async function analyzeAuditCommittee(item: EngineItem, evidence: Evidence): Prom
   // Nothing quantified — let the categorical rule read it as "unquantified" (NEUTRAL),
   // which is still more honest than a silent NA.
   const value = parts.length ? parts.join(", ") : (data.evidenceQuote ?? "Audit committee composition disclosed");
+  const rParts: string[] = [];
+  if (data.independentMembers != null && data.totalMembers != null) {
+    rParts.push(
+      `The audit committee has ${data.totalMembers} members, of whom ${data.independentMembers} are independent.`,
+    );
+  }
+  if (data.meetings != null) rParts.push(`It met ${data.meetings} time(s) during the year.`);
   return {
     value,
+    rationale: rParts.length ? rParts.join(" ") : undefined,
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
     confidence: parts.length ? "high" : "low",
@@ -290,6 +303,7 @@ interface QualExtract {
   found: boolean;
   confident?: boolean;
   value?: string;
+  rationale?: string;
   evidenceQuote?: string;
   page?: number | null;
 }
@@ -301,12 +315,29 @@ const QUAL_SCHEMA = {
     found: { type: "boolean" },
     confident: { type: "boolean" },
     value: { type: "string" },
+    rationale: { type: "string" },
     evidenceQuote: { type: "string" },
     page: { type: ["integer", "null"] },
   },
   required: ["relevant", "found"],
   additionalProperties: false,
 } as const;
+
+/**
+ * Shared instruction that turns a bare fact into a reader-grade answer: a short
+ * `value` for the flag engine PLUS a `rationale` of 2-3 full sentences carrying
+ * the actual figures/dates/names and why they matter — no green/red call.
+ */
+const RATIONALE_INSTRUCTION =
+  `Return TWO things:\n` +
+  `  • "value": the concise fact — a short phrase (this drives the flag), e.g. ` +
+  `"18.2% independent (2 of 11)" or "Auditor rotated in FY2023".\n` +
+  `  • "rationale": 2-3 complete sentences written for a human reader. State the ` +
+  `SPECIFIC facts from the excerpts — exact figures, percentages, dates, names, ` +
+  `year-on-year change — and briefly why they matter for governance. Be concrete ` +
+  `and quantitative; never vague ("high calibre" alone is not acceptable — say who/` +
+  `how much/when). Do NOT declare green/red/pass/fail and do NOT speculate beyond ` +
+  `the evidence.\n`;
 
 const LARGE_PASSAGE_CHARS = 12_000;
 
@@ -325,11 +356,11 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
     `liability item, or a CSR officer for "family disputes"). Sharing some general ` +
     `topic counts as relevant. When in doubt, treat it as RELEVANT — do not reject ` +
     `merely because the passage is brief or indirect.\n` +
-    `If relevant, state the CONCISE fact for this item (a short phrase, not a paragraph). ` +
-    `Do NOT decide green/red — just the fact. If the excerpts genuinely don't answer it, ` +
-    `set "found" to false. Set "confident" to false when the passage is on-topic but thin ` +
-    `(we keep a low-confidence verdict rather than discarding it). Put the exact supporting ` +
-    `sentence (<=240 chars) in "evidenceQuote" and its page in "page".\n\n` +
+    `If relevant, answer for this item. ${RATIONALE_INSTRUCTION}` +
+    `If the excerpts genuinely don't answer it, set "found" to false. Set "confident" ` +
+    `to false when the passage is on-topic but thin (we keep a low-confidence verdict ` +
+    `rather than discarding it). Put the exact supporting sentence (<=240 chars) in ` +
+    `"evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
 
   const res = await extract<QualExtract>(role, { prompt, temperature: 0 }, QUAL_SCHEMA);
@@ -341,6 +372,7 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   const confidence = evidence.from === "web" || data.confident === false ? "low" : "medium";
   return {
     value: data.value,
+    rationale: cleanRationale(data.rationale),
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
     confidence,
@@ -368,9 +400,10 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
     `\nExtract ONLY the figure(s) for THIS SPECIFIC item (per its title above) — in Rs crore, ` +
     `with the year if shown — and IGNORE other figures in the note (e.g. for "Corporate ` +
     `guarantees given" report only guarantees, not tax disputes or capital commitments). ` +
-    `Prefer the most recent year. Summarise in "value" as a concise factual statement ` +
-    `INCLUDING the key number(s) for this item. RELEVANCE: set "relevant" to false ONLY if ` +
-    `these excerpts are clearly a different note. If relevant but THIS item's figure isn't ` +
+    `Prefer the most recent year. ${RATIONALE_INSTRUCTION}` +
+    `The "rationale" must quote the actual Rs-crore figures (and the comparative year ` +
+    `if shown) and note the trend. RELEVANCE: set "relevant" to false ONLY if these ` +
+    `excerpts are clearly a different note. If relevant but THIS item's figure isn't ` +
     `present, set "found" to false. Set "confident" to false if the figures are unclear/` +
     `partial. Put the exact supporting line in "evidenceQuote" and its page in "page".\n\n` +
     passagesBlock(passages);
@@ -384,6 +417,7 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
   if (!data.relevant || !data.found || !data.value) return NA;
   return {
     value: data.value,
+    rationale: cleanRationale(data.rationale),
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
     confidence: data.confident === false ? "low" : "medium",
@@ -393,4 +427,11 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+/** Trim a model rationale; drop it if empty or a bare echo of nothing useful. */
+function cleanRationale(s: string | undefined | null): string | undefined {
+  const t = (s ?? "").trim();
+  if (t.length < 8) return undefined;
+  return t.slice(0, 600);
 }
