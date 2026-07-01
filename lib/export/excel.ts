@@ -74,11 +74,11 @@ function summarySheet(wb: ExcelJS.Workbook, r: CompanyReport) {
 
   const totals = r.summary?.totals ?? { green: 0, red: 0, neutral: 0, na: 0 };
   const kpis: Array<[string, number | string, string, string]> = [
-    ["🟢 Green", totals.green, C.greenSoft, "FF065F46"],
-    ["🔴 Red", totals.red, C.redSoft, "FF9F1239"],
-    ["⚪ Neutral", totals.neutral, C.amberSoft, "FF92400E"],
-    ["▫️ N/A", totals.na, C.slateSoft, "FF334155"],
-    ["✅ Answered", `${r.answered}/${r.total}`, "FFEEF2FF", "FF3730A3"],
+    ["Green flags", totals.green, C.greenSoft, "FF065F46"],
+    ["Red flags", totals.red, C.redSoft, "FF9F1239"],
+    ["Neutral", totals.neutral, C.amberSoft, "FF92400E"],
+    ["Not available", totals.na, C.slateSoft, "FF334155"],
+    ["Answered", `${r.answered}/${r.total}`, "FFEEF2FF", "FF3730A3"],
   ];
   let col = 2;
   for (const [label, val, fill, text] of kpis) {
@@ -99,7 +99,7 @@ function summarySheet(wb: ExcelJS.Workbook, r: CompanyReport) {
   ws.getRow(9).height = 30;
 
   const startRow = 12;
-  ["Section", "🟢", "🔴", "⚪", "▫️", "Answered"].forEach((h, i) => {
+  ["Section", "Green", "Red", "Neutral", "N/A", "Answered"].forEach((h, i) => {
     const cell = ws.getCell(startRow, 2 + i);
     cell.value = h;
     cell.font = { bold: true, color: { argb: C.bandText } };
@@ -169,7 +169,7 @@ function checklistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
     }
     const c = s.counts;
     const band = ws.getCell(row, 1);
-    band.value = `${s.code}  ·  ${s.name}      🟢 ${c.green}   🔴 ${c.red}   ⚪ ${c.neutral}   ▫️ ${c.na}`;
+    band.value = `${s.code}  ·  ${s.name}       ${c.green} Green · ${c.red} Red · ${c.neutral} Neutral · ${c.na} N/A`;
     band.font = { bold: true, size: 11, color: { argb: C.bandText } };
     band.alignment = { vertical: "middle", indent: 1 };
     ws.getRow(row).height = 22;
@@ -181,7 +181,7 @@ function checklistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
       const rowObj = ws.getRow(row);
       rowObj.getCell(1).value = it.id;
       rowObj.getCell(2).value = it.item;
-      rowObj.getCell(3).value = `${m.emoji} ${m.label}`;
+      rowObj.getCell(3).value = m.label;
       rowObj.getCell(4).value = it.value && it.value.toLowerCase() !== "not available" ? it.value : "—";
       rowObj.getCell(5).value = it.verdict ?? "—";
       rowObj.getCell(6).value = it.confidence != null ? `${Math.round(it.confidence * 100)}%` : "—";
@@ -219,7 +219,7 @@ function watchlistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
 
   ws.mergeCells("B2:E2");
   const t = ws.getCell("B2");
-  t.value = reds.length ? `⚠  ${reds.length} RED flag(s) need attention` : "✓  No red flags — clean report";
+  t.value = reds.length ? `${reds.length} RED flag(s) need attention` : "No red flags — clean report";
   t.font = { bold: true, size: 14, color: { argb: reds.length ? "FF9F1239" : "FF065F46" } };
   t.fill = solid(reds.length ? C.redSoft : C.greenSoft);
   t.alignment = { vertical: "middle", indent: 1 };
@@ -264,10 +264,10 @@ function watchlistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
     }
     row++;
   };
-  block(`🔴  Red flags (${reds.length})`, reds, "FF9F1239", C.redSoft);
-  block(`🟠  Needs review (${review.length})`, review, "FF92400E", C.amberSoft);
+  block(`Red flags (${reds.length})`, reds, "FF9F1239", C.redSoft);
+  block(`Needs review (${review.length})`, review, "FF92400E", C.amberSoft);
   if (!reds.length && !review.length) {
-    ws.getCell(row, 2).value = "Nothing on the watchlist. 🎉";
+    ws.getCell(row, 2).value = "Nothing on the watchlist.";
     ws.getCell(row, 2).font = { italic: true, color: { argb: C.sub } };
   }
 }
