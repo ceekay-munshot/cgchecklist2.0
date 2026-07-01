@@ -17,7 +17,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <header className="sticky top-0 z-40 border-b border-white/60 bg-white/70 backdrop-blur-xl">
-          <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
+          <nav className="mx-auto flex max-w-6xl items-center px-6 py-3.5">
             <Link href="/" className="flex items-center gap-2.5">
               <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm shadow-indigo-300">
                 <span className="text-base">◆</span>
@@ -29,14 +29,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 </span>
               </span>
             </Link>
-            <div className="flex items-center gap-1 text-sm font-medium text-slate-600">
-              <Link href="/" className="rounded-lg px-3 py-1.5 transition hover:bg-slate-100 hover:text-slate-900">
-                Reports
-              </Link>
-              <Link href="/health" className="rounded-lg px-3 py-1.5 transition hover:bg-slate-100 hover:text-slate-900">
-                Health
-              </Link>
-            </div>
           </nav>
         </header>
         <main className="flex-1">{children}</main>
