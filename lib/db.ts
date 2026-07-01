@@ -2,43 +2,22 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { neonConfig } from "@neondatabase/serverless";
 
-// Reuse a single PrismaClient across hot reloads in development to avoid
-// exhausting database connections. See:
-// https://www.prisma.io/docs/orm/more/help-and-troubleshooting/nextjs-help
+// The Prisma Client is engine-free (see prisma/schema.prisma `queryCompiler`), so
+// it MUST be constructed with a driver adapter. We use Neon's serverless driver
+// over HTTPS (poolQueryViaFetch) — the only DB connection style that works on
+// Cloudflare Workers, and it works identically in Node (GitHub Actions, local,
+// scripts). No raw TCP, no native engine binary, no runtime detection needed.
+neonConfig.poolQueryViaFetch = true;
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
 const LOG: ("error" | "warn")[] = process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"];
 
-/**
- * Cloudflare Workers run in a V8-isolate runtime with no raw TCP sockets, so
- * Prisma's default query engine cannot reach Postgres there. On Workers ONLY we
- * connect through Neon's serverless (WebSocket/HTTP) driver adapter. Node — the
- * GitHub Actions harvest/analyze/export jobs, local dev, and scripts — keeps the
- * standard client completely untouched, so nothing that works today changes.
- */
-function onCloudflareWorkers(): boolean {
-  // `WebSocketPair` is a Cloudflare Workers-only global that `nodejs_compat` does
-  // NOT add, so it reliably distinguishes the Worker from Node even with Node
-  // compatibility enabled — where `navigator.userAgent` can read "Node.js" and
-  // break a plain userAgent check. Also accept the explicit Cloudflare UA and an
-  // env override as belt-and-suspenders.
-  const g = globalThis as unknown as { WebSocketPair?: unknown; navigator?: { userAgent?: string } };
-  if (typeof g.WebSocketPair !== "undefined") return true;
-  if (g.navigator?.userAgent === "Cloudflare-Workers") return true;
-  return process.env.FORCE_NEON_ADAPTER === "1";
-}
-
 function createClient(): PrismaClient {
-  if (onCloudflareWorkers()) {
-    // Route simple queries over HTTP fetch (robust on Workers); transactions
-    // still use WebSockets via the pool.
-    neonConfig.poolQueryViaFetch = true;
-    const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL ?? "" });
-    return new PrismaClient({ adapter, log: LOG });
-  }
-  return new PrismaClient({ log: LOG });
+  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL ?? "" });
+  return new PrismaClient({ adapter, log: LOG });
 }
 
 export const prisma = globalForPrisma.prisma ?? createClient();

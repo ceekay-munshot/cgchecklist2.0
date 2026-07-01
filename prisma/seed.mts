@@ -2,10 +2,14 @@
 // Run with `npm run db:seed` (or automatically via `prisma migrate reset`).
 // Runnable directly: `node prisma/seed.ts` (Node 22 strips the TS types).
 import { PrismaClient } from "@prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { neonConfig } from "@neondatabase/serverless";
 import fs from "node:fs";
 import path from "node:path";
 
-const prisma = new PrismaClient();
+// Engine-free client — must be built with a driver adapter (see prisma/schema.prisma).
+neonConfig.poolQueryViaFetch = true;
+const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL ?? "" }) });
 
 interface RawItem {
   id: string;
