@@ -5,9 +5,14 @@ import { useRouter } from "next/navigation";
 
 /**
  * Shared on-demand analysis launcher: POST /api/analyze, then poll
- * /api/analyze/<ticker>/status and show a full-screen progress modal until the
- * report is ready, then navigate to it. Used by the home search box
- * (SearchLauncher) and the report page's "Re-analyse" button.
+ * /api/analyze/<ticker>/status and show a progress modal until the report is
+ * ready, then navigate to it. Used by the home search box (SearchLauncher) and
+ * the report page's "Re-analyse" button.
+ *
+ * The modal look mirrors the sister dashboard (elapsed timer + green progress
+ * bar + phase checklist), but the progress is driven by OUR real run status
+ * (actual items completed, and it waits for the MUNS backfill) — not a fake
+ * time-based curve.
  */
 
 interface StartResponse {
@@ -34,7 +39,13 @@ export function useAnalyzeRun() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [modal, setModal] = useState<null | { ticker: string; runId: string; dispatched: boolean; dispatchError?: string }>(null);
+  const [modal, setModal] = useState<null | {
+    ticker: string;
+    runId: string;
+    dispatched: boolean;
+    dispatchError?: string;
+    startedAt: number;
+  }>(null);
   const [progress, setProgress] = useState<StatusResponse>(INITIAL);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -89,7 +100,7 @@ export function useAnalyzeRun() {
           goToReport(data.ticker);
           return;
         }
-        setModal({ ticker: data.ticker, runId: data.runId, dispatched: data.dispatched !== false, dispatchError: data.dispatchError });
+        setModal({ ticker: data.ticker, runId: data.runId, dispatched: data.dispatched !== false, dispatchError: data.dispatchError, startedAt: Date.now() });
         setProgress(INITIAL);
         stopPolling();
         pollRef.current = setInterval(() => poll(data.ticker, data.runId), POLL_MS);
@@ -109,85 +120,152 @@ export function useAnalyzeRun() {
   }, [stopPolling]);
 
   const overlay = modal ? (
-    <LoadingScreen ticker={modal.ticker} dispatched={modal.dispatched} dispatchError={modal.dispatchError} progress={progress} onClose={closeModal} />
+    <LoadingModal
+      ticker={modal.ticker}
+      dispatched={modal.dispatched}
+      dispatchError={modal.dispatchError}
+      startedAt={modal.startedAt}
+      progress={progress}
+      onClose={closeModal}
+    />
   ) : null;
 
   return { launch, busy, error, overlay };
 }
 
-export function LoadingScreen({
+// ---------------------------------------------------------------------------
+// Loading modal (visual parity with the sister dashboard; our real progress)
+// ---------------------------------------------------------------------------
+
+const PHASES: { label: string; at: number }[] = [
+  { label: "Queued — spinning up the analysis", at: 0 },
+  { label: "Fetching filings, reports & ratings", at: 8 },
+  { label: "Analysing governance checklist", at: 16 },
+  { label: "Reviewing audit & compliance signals", at: 45 },
+  { label: "Filling remaining items via research", at: 72 },
+  { label: "Finalising findings", at: 96 },
+];
+
+function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function LoadingModal({
   ticker,
   dispatched,
   dispatchError,
+  startedAt,
   progress,
   onClose,
 }: {
   ticker: string;
   dispatched: boolean;
   dispatchError?: string;
+  startedAt: number;
   progress: StatusResponse;
   onClose: () => void;
 }) {
+  const [now, setNow] = useState(startedAt);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const pct = Math.min(100, Math.max(0, Math.round(progress.percent)));
   const failed = progress.phase === "error";
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-6 backdrop-blur-md">
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl">
-        <div className="bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 px-7 pb-8 pt-7 text-white">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live analysis
-            </span>
-            <span className="rounded-md bg-white/20 px-2 py-0.5 text-sm font-bold tracking-wide">{ticker}</span>
-          </div>
-          <div className="mt-6 grid place-items-center">
-            <Ring pct={pct} failed={failed} />
-          </div>
-        </div>
-        <div className="px-7 py-6">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <span className="text-lg">{failed ? "⚠️" : progress.emoji ?? "🔍"}</span>
-            <span>{progress.stage}</span>
-          </div>
-          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 transition-all duration-700 ease-out" style={{ width: `${pct}%` }} />
-          </div>
-          {!dispatched && (
-            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-700">
-              ⏳ Couldn’t auto-start this run. <b>Reason:</b>{" "}
-              <code className="rounded bg-amber-100 px-1 py-0.5">{dispatchError ?? "unknown"}</code>
-              {dispatchError === "dispatch_not_configured" ? (
-                <> — the site can’t see the dispatch token at runtime.</>
-              ) : (
-                <> — this is the exact response from the GitHub trigger call (e.g. a token-permission or workflow issue).</>
-              )}{" "}
-              You can run the <b>analyze-company</b> Action for <b>{ticker}</b> manually meanwhile.
-            </div>
-          )}
-          <div className="mt-5 flex items-center justify-between">
-            <p className="text-xs text-slate-400">Keep this open — it jumps to the report when ready.</p>
-            <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
-              {failed ? "Close" : "Hide"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+  const complete = pct >= 100;
+  // Active phase = the furthest phase our real % has reached.
+  const activeIdx = complete ? PHASES.length : PHASES.reduce((idx, p, i) => (pct >= p.at ? i : idx), 0);
+  const elapsed = formatElapsed(now - startedAt);
 
-function Ring({ pct, failed }: { pct: number; failed: boolean }) {
-  const R = 52;
-  const C = 2 * Math.PI * R;
-  const off = C - (pct / 100) * C;
   return (
-    <div className="relative h-32 w-32">
-      <svg viewBox="0 0 120 120" className="h-32 w-32 -rotate-90">
-        <circle cx="60" cy="60" r={R} fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="10" />
-        <circle cx="60" cy="60" r={R} fill="none" stroke={failed ? "#fecaca" : "#ffffff"} strokeWidth="10" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={off} className="transition-all duration-700 ease-out" />
-      </svg>
-      <div className="absolute inset-0 grid place-items-center">
-        <span className="text-3xl font-extrabold tabular-nums">{pct}%</span>
+    <div role="dialog" aria-modal="true" aria-label="Analysing company" className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-[#0a1422]/45 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-xl border border-[#dde4ee] bg-white p-6 shadow-[0_24px_48px_rgba(10,20,34,0.18)]">
+        {/* header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6f7d97]">Governance analysis</p>
+            <h2 className="mt-1 truncate text-base font-semibold tracking-tight text-[#0a1422]">
+              {ticker}
+              <span className="ml-2 font-normal text-[#6f7d97]">· live</span>
+            </h2>
+          </div>
+          <span className="shrink-0 rounded-full bg-[#ecf6ee] px-2.5 py-1 text-[11px] font-semibold tabular-nums text-[#1a5d30]">{elapsed}</span>
+        </div>
+
+        {/* progress bar */}
+        <div className="mt-5">
+          <div
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-2 w-full overflow-hidden rounded-full bg-[#eef2f8]"
+          >
+            <div
+              className={`h-full rounded-full transition-[width] duration-700 ease-out ${failed ? "bg-[#c43838]" : "bg-[#2f9c50]"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] text-[#6f7d97]">
+            <span className="truncate pr-2">{failed ? "Run failed" : progress.stage}</span>
+            <span className="tabular-nums">{pct}%</span>
+          </div>
+        </div>
+
+        {/* phase checklist */}
+        <ul className="mt-5 space-y-2">
+          {PHASES.map((phase, i) => {
+            const status = i < activeIdx ? "done" : i === activeIdx && !complete ? "active" : complete ? "done" : "pending";
+            return (
+              <li key={phase.label} className={`flex items-start gap-3 text-sm ${status === "pending" ? "text-[#6f7d97]" : "text-[#0a1422]"}`}>
+                <span
+                  aria-hidden
+                  className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                    status === "done"
+                      ? "bg-[#2f9c50] text-white"
+                      : status === "active"
+                        ? "bg-[#ecf6ee] text-[#1a5d30] ring-2 ring-[#2f9c50]"
+                        : "bg-[#eef2f8] text-[#6f7d97]"
+                  }`}
+                >
+                  {status === "done" ? "✓" : status === "active" ? <span className="block h-2 w-2 animate-pulse rounded-full bg-[#237a3e]" /> : i + 1}
+                </span>
+                <span className="leading-5">{phase.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* dispatch failure diagnostic (kept) */}
+        {!dispatched && (
+          <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-700">
+            ⏳ Couldn’t auto-start. <b>Reason:</b> <code className="rounded bg-amber-100 px-1 py-0.5">{dispatchError ?? "unknown"}</code>. You can run the{" "}
+            <b>analyze-company</b> Action for <b>{ticker}</b> manually meanwhile.
+          </div>
+        )}
+
+        {/* note */}
+        <p className="mt-5 rounded-lg bg-[#f7f9fc] px-3 py-2 text-[12px] leading-relaxed text-[#525f78]">
+          A full analysis of all 106 checklist items typically takes a few minutes. You can leave this tab open — it opens the report the moment
+          everything (including the research fill) is complete.
+        </p>
+
+        {/* cancel */}
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#dde4ee] bg-white px-4 text-sm font-medium text-[#525f78] transition hover:bg-[#fbe9e9] hover:text-[#731e1e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f988e]"
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden>
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+            </svg>
+            {failed ? "Close" : "Hide"}
+          </button>
+        </div>
       </div>
     </div>
   );
