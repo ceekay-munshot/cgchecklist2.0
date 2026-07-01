@@ -15,6 +15,7 @@ interface StartResponse {
   ticker: string;
   runId: string;
   dispatched?: boolean;
+  dispatchError?: string;
 }
 
 export interface StatusResponse {
@@ -33,7 +34,7 @@ export function useAnalyzeRun() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [modal, setModal] = useState<null | { ticker: string; runId: string; dispatched: boolean }>(null);
+  const [modal, setModal] = useState<null | { ticker: string; runId: string; dispatched: boolean; dispatchError?: string }>(null);
   const [progress, setProgress] = useState<StatusResponse>(INITIAL);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -88,7 +89,7 @@ export function useAnalyzeRun() {
           goToReport(data.ticker);
           return;
         }
-        setModal({ ticker: data.ticker, runId: data.runId, dispatched: data.dispatched !== false });
+        setModal({ ticker: data.ticker, runId: data.runId, dispatched: data.dispatched !== false, dispatchError: data.dispatchError });
         setProgress(INITIAL);
         stopPolling();
         pollRef.current = setInterval(() => poll(data.ticker, data.runId), POLL_MS);
@@ -108,7 +109,7 @@ export function useAnalyzeRun() {
   }, [stopPolling]);
 
   const overlay = modal ? (
-    <LoadingScreen ticker={modal.ticker} dispatched={modal.dispatched} progress={progress} onClose={closeModal} />
+    <LoadingScreen ticker={modal.ticker} dispatched={modal.dispatched} dispatchError={modal.dispatchError} progress={progress} onClose={closeModal} />
   ) : null;
 
   return { launch, busy, error, overlay };
@@ -117,11 +118,13 @@ export function useAnalyzeRun() {
 export function LoadingScreen({
   ticker,
   dispatched,
+  dispatchError,
   progress,
   onClose,
 }: {
   ticker: string;
   dispatched: boolean;
+  dispatchError?: string;
   progress: StatusResponse;
   onClose: () => void;
 }) {
@@ -151,9 +154,14 @@ export function LoadingScreen({
           </div>
           {!dispatched && (
             <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-700">
-              ⏳ The run is <b>queued</b> but auto-start isn’t configured, so it won’t begin on its own. Run the{" "}
-              <b>analyze-company</b> Action for <b>{ticker}</b> and this screen will track it live. (Set{" "}
-              <code>GITHUB_DISPATCH_TOKEN</code> + <code>GITHUB_REPO</code> to make it fully self-serve.)
+              ⏳ Couldn’t auto-start this run. <b>Reason:</b>{" "}
+              <code className="rounded bg-amber-100 px-1 py-0.5">{dispatchError ?? "unknown"}</code>
+              {dispatchError === "dispatch_not_configured" ? (
+                <> — the site can’t see the dispatch token at runtime.</>
+              ) : (
+                <> — this is the exact response from the GitHub trigger call (e.g. a token-permission or workflow issue).</>
+              )}{" "}
+              You can run the <b>analyze-company</b> Action for <b>{ticker}</b> manually meanwhile.
             </div>
           )}
           <div className="mt-5 flex items-center justify-between">
