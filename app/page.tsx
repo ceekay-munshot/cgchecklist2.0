@@ -15,8 +15,8 @@ export default async function Home() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
-      {/* Hero */}
-      <section className="rise">
+      {/* Hero — relative z-20 so the search dropdown floats above the cards below */}
+      <section className="rise relative z-20">
         <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-600 ring-1 ring-indigo-100">
           <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" /> Corporate Governance Intelligence
         </span>
