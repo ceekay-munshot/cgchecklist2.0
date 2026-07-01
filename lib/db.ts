@@ -19,7 +19,15 @@ const LOG: ("error" | "warn")[] = process.env.NODE_ENV === "development" ? ["err
  * standard client completely untouched, so nothing that works today changes.
  */
 function onCloudflareWorkers(): boolean {
-  return typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+  // `WebSocketPair` is a Cloudflare Workers-only global that `nodejs_compat` does
+  // NOT add, so it reliably distinguishes the Worker from Node even with Node
+  // compatibility enabled — where `navigator.userAgent` can read "Node.js" and
+  // break a plain userAgent check. Also accept the explicit Cloudflare UA and an
+  // env override as belt-and-suspenders.
+  const g = globalThis as unknown as { WebSocketPair?: unknown; navigator?: { userAgent?: string } };
+  if (typeof g.WebSocketPair !== "undefined") return true;
+  if (g.navigator?.userAgent === "Cloudflare-Workers") return true;
+  return process.env.FORCE_NEON_ADAPTER === "1";
 }
 
 function createClient(): PrismaClient {
