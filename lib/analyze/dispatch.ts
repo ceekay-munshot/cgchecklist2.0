@@ -66,6 +66,9 @@ export async function triggerAnalysisWorkflow(
         Authorization: `Bearer ${cfg.token}`,
         "X-GitHub-Api-Version": "2022-11-28",
         "Content-Type": "application/json",
+        // GitHub's REST API REQUIRES a User-Agent header; without it the request
+        // is rejected with "403 forbidden by administrative rules".
+        "User-Agent": "cgchecklist-ondemand",
       },
       body: JSON.stringify({
         ref: cfg.ref,
