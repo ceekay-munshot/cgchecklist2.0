@@ -15,7 +15,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime queries go through DATABASE_URL. On Cloudflare/production this is the
+  // Prisma Accelerate URL ("prisma://…"); Accelerate can't run migrations, so the
+  // Prisma CLI (migrate/db push) uses directUrl — a DIRECT Postgres connection.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------

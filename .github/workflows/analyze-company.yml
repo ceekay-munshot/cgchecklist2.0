@@ -32,7 +32,9 @@ jobs:
     timeout-minutes: 90
 
     env:
+      # Runtime queries via Accelerate; migrations/seed via the direct connection.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
       # Harvest (Screener login + doc fallback + scrape providers)
       SCREENER_EMAIL: ${{ secrets.SCREENER_EMAIL }}
       SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}

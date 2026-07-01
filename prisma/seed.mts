@@ -5,7 +5,10 @@ import { PrismaClient } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
 
-const prisma = new PrismaClient();
+// Seed runs as a setup task in Node (GitHub Actions / local), never on Workers.
+// Use the DIRECT Postgres connection (DIRECT_URL) so it works with the standard
+// engine even when DATABASE_URL is the Accelerate ("prisma://") URL.
+const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL || process.env.DATABASE_URL });
 
 interface RawItem {
   id: string;

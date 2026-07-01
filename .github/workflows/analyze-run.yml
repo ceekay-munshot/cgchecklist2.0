@@ -28,7 +28,9 @@ jobs:
     timeout-minutes: 60
 
     env:
+      # Runtime queries via Accelerate; migrations/seed via the direct connection.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
       # Engine routing: OpenAI (paid) is PRIMARY for every role; the free
       # providers below stay as a safety-net fallback chain.
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { CompanyReport, FlagName, ReportItem, ReportSection } from "@/lib/report";
+import { useAnalyzeRun } from "@/app/components/AnalyzeRun";
 
 type FilterKey = "ALL" | FlagName;
 
@@ -21,6 +22,7 @@ export function ReportView({ report }: { report: CompanyReport }) {
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const [query, setQuery] = useState("");
   const slug = encodeURIComponent(report.ticker ?? report.runId);
+  const { launch, busy, overlay } = useAnalyzeRun();
 
   const totals = report.summary?.totals ?? { green: 0, red: 0, neutral: 0, na: 0 };
   const gatePass = report.summary?.nonNegotiable?.gatePass ?? null;
@@ -78,6 +80,14 @@ export function ReportView({ report }: { report: CompanyReport }) {
               >
                 <span>📊</span> Export to Excel
               </a>
+              <button
+                onClick={() => report.ticker && launch(report.ticker, { force: true })}
+                disabled={busy || !report.ticker}
+                title="Run a fresh analysis now (ignores the 90-day cache)"
+                className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span>🔄</span> {busy ? "Starting…" : "Re-analyse"}
+              </button>
               <ComingSoon label="PDF" />
               <ComingSoon label="PPTX" />
             </div>
@@ -149,6 +159,7 @@ export function ReportView({ report }: { report: CompanyReport }) {
       <p className="mt-8 text-center text-xs text-slate-400">
         Flags only — no numeric scoring. Web-sourced verdicts are low-confidence and never fire a red.
       </p>
+      {overlay}
     </div>
   );
 }
