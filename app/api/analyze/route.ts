@@ -57,9 +57,13 @@ export async function POST(req: Request) {
   const run =
     inflight ?? (await prisma.analysisRun.create({ data: { companyId: comp.id, status: "QUEUED", createdBy: "web:ondemand" } }));
 
+  // Dispatch the worker whenever the run hasn't actually started yet (QUEUED) —
+  // including a REUSED queued run from an earlier search that never fired (e.g.
+  // the dispatch token wasn't set then). A run already HARVESTING/PROCESSING has
+  // a worker on it, so we don't re-fire.
   let dispatched = true;
   let dispatchError: string | undefined;
-  if (!inflight) {
+  if (run.status === "QUEUED") {
     if (isDispatchConfigured()) {
       const d = await triggerAnalysisWorkflow(comp.ticker ?? ticker, { exchange: body.exchange, force: body.force });
       dispatched = d.ok;
