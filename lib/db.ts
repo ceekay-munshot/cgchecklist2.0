@@ -1,23 +1,24 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaNeon } from "@prisma/adapter-neon";
-import { neonConfig } from "@neondatabase/serverless";
+import { PrismaClient } from "@prisma/client/edge";
+import type { PrismaClient as BasePrismaClient } from "@prisma/client";
+import { withAccelerate } from "@prisma/extension-accelerate";
 
-// The Prisma Client is engine-free (see prisma/schema.prisma `queryCompiler`), so
-// it MUST be constructed with a driver adapter. We use Neon's serverless driver
-// over HTTPS (poolQueryViaFetch) — the only DB connection style that works on
-// Cloudflare Workers, and it works identically in Node (GitHub Actions, local,
-// scripts). No raw TCP, no native engine binary, no runtime detection needed.
-neonConfig.poolQueryViaFetch = true;
-
+// Cloudflare Workers can't run Prisma's native query engine. We connect through
+// Prisma Accelerate, which runs the engine in Prisma's cloud and speaks to it
+// over HTTPS — the one connection style that works on Workers. DATABASE_URL is
+// the Accelerate connection string ("prisma://…"); Accelerate holds the real
+// Neon connection. Works identically in Node (scripts/local) with the same URL.
+//
+// The runtime client is the Accelerate-extended edge client; we type the export
+// as the base PrismaClient (type-only import, erased at build) so `include`/
+// relation inference stays exact for callers.
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  prisma: BasePrismaClient | undefined;
 };
 
 const LOG: ("error" | "warn")[] = process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"];
 
-function createClient(): PrismaClient {
-  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL ?? "" });
-  return new PrismaClient({ adapter, log: LOG });
+function createClient(): BasePrismaClient {
+  return new PrismaClient({ log: LOG }).$extends(withAccelerate()) as unknown as BasePrismaClient;
 }
 
 export const prisma = globalForPrisma.prisma ?? createClient();

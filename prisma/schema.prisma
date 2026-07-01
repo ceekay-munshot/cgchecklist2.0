@@ -10,12 +10,7 @@
 //     (ItemResult.status) and per-provider daily usage (ProviderUsage).
 
 generator client {
-  provider        = "prisma-client-js"
-  // Engine-free client (no native/WASM query engine binary): queries are
-  // compiled in JS and run through a driver adapter. This is what lets Prisma
-  // run on Cloudflare Workers, and it works identically in Node. Every client
-  // MUST be constructed with a driver adapter (see lib/db.ts, prisma/seed.mts).
-  previewFeatures = ["queryCompiler", "driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {

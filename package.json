@@ -28,6 +28,7 @@
     "@neondatabase/serverless": "^1.1.0",
     "@prisma/adapter-neon": "^6.19.3",
     "@prisma/client": "^6.19.3",
+    "@prisma/extension-accelerate": "^3.0.1",
     "ajv": "^8.20.0",
     "cheerio": "^1.2.0",
     "exceljs": "^4.4.0",
