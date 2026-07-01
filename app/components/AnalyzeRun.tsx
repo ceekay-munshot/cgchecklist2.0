@@ -180,9 +180,19 @@ function LoadingModal({
   const elapsed = formatElapsed(now - startedAt);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Analysing company" className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-[#0a1422]/45 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-xl border border-[#dde4ee] bg-white p-6 shadow-[0_24px_48px_rgba(10,20,34,0.18)]">
+    <div className="fixed inset-0 z-[100] overflow-y-auto">
+      <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm" aria-hidden />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Analysing company"
+        className="relative flex min-h-full items-center justify-center p-4 sm:p-6"
+        onClick={onClose}
+      >
+        <div
+          className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* header */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -265,6 +275,7 @@ function LoadingModal({
             </svg>
             {failed ? "Close" : "Hide"}
           </button>
+        </div>
         </div>
       </div>
     </div>
