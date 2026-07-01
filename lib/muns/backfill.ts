@@ -3,6 +3,7 @@ import { analyzeItem } from "@/lib/engine/analyzeItem";
 import { assignFlag } from "@/lib/engine/flag";
 import { loadCompanyScale } from "@/lib/engine/evidence";
 import { fromPrismaItem, kindOf, type Evidence } from "@/lib/engine/types";
+import { summarize } from "@/lib/orchestrate";
 import { runAllLanes, type LaneSection } from "./lanes";
 import { munsConfigured, munsEnv, defaultDateWindow, type MunsQueryContext } from "./client";
 
@@ -126,6 +127,23 @@ export async function munsBackfill(
     } catch (e) {
       log(`  ${it.id} classify error: ${(e as Error).message}`);
     }
+  }
+
+  // Refresh the run's stored summary so the tally + gate reflect the backfilled
+  // items (analyze-run wrote summaryJson BEFORE this pass, so it's now stale).
+  try {
+    const fresh = await prisma.itemResult.findMany({ where: { runId }, select: { itemId: true, status: true, flag: true } });
+    const summary = summarize(
+      items.map((it) => ({ id: it.id, sectionCode: it.sectionCode, isNonNegotiable: it.isNonNegotiable })),
+      sections.map((s) => ({ code: s.code, name: s.name })),
+      fresh,
+    );
+    await prisma.analysisRun.update({
+      where: { id: runId },
+      data: { summaryJson: summary as never, itemsDone: summary.itemsDone, itemsError: summary.itemsError },
+    });
+  } catch (e) {
+    log(`summary refresh skipped: ${(e as Error).message}`);
   }
 
   log(`MUNS backfill done: fetched ${outcome.fetched}, filled ${outcome.filled} (${JSON.stringify(outcome.byFlag)})`);

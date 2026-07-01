@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { isCommitted } from "@/lib/orchestrate";
+import { isCommitted, summarize } from "@/lib/orchestrate";
 import type { RunSummary } from "@/lib/orchestrate";
 
 /**
@@ -142,6 +142,15 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
   const allItems = reportSections.flatMap((s) => s.items);
   const answered = allItems.filter((i) => i.flag === "GREEN" || i.flag === "RED" || i.flag === "NEUTRAL").length;
 
+  // Recompute the summary from the LIVE item results rather than trusting the
+  // stored summaryJson — a later stage (e.g. MUNS backfill) may have filled
+  // items after analyze-run wrote the summary, so the stored tally can be stale.
+  const summary = summarize(
+    items.map((it) => ({ id: it.id, sectionCode: it.sectionCode, isNonNegotiable: it.isNonNegotiable })),
+    sections.map((s) => ({ code: s.code, name: s.name })),
+    results.map((r) => ({ itemId: r.itemId, status: r.status, flag: r.flag })),
+  );
+
   return {
     runId: run.id,
     ticker: run.company.ticker,
@@ -151,7 +160,7 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
     status: run.status,
     createdAt: run.createdAt.toISOString(),
     lastProcessedAt: run.lastProcessedAt?.toISOString() ?? null,
-    summary: (run.summaryJson as unknown as RunSummary) ?? null,
+    summary,
     sections: reportSections,
     answered,
     total: allItems.length,
