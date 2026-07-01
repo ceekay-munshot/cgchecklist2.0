@@ -24,13 +24,18 @@ export interface DispatchConfig {
   workflow: string;
 }
 
+// The repo is public info (this app's own repo), so it defaults in code — this
+// avoids depending on a plain-text Worker var, which Cloudflare wipes on every
+// rebuild. Only the token must be provided, and a Worker SECRET persists across
+// deploys. Override the default with GITHUB_REPO if you fork/rename.
+const DEFAULT_REPO = "ceekay-munshot/cgchecklist2.0";
+
 export function dispatchConfig(): DispatchConfig | null {
   const token = process.env.GITHUB_DISPATCH_TOKEN;
-  const repo = process.env.GITHUB_REPO;
-  if (!token || !repo) return null;
+  if (!token) return null;
   return {
     token,
-    repo,
+    repo: process.env.GITHUB_REPO || DEFAULT_REPO,
     ref: process.env.GITHUB_DISPATCH_REF || "main",
     workflow: process.env.GITHUB_DISPATCH_WORKFLOW || "analyze-company.yml",
   };
