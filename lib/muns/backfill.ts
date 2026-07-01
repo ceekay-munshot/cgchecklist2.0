@@ -54,7 +54,12 @@ export async function munsBackfill(
     if (!r || !COMMITTED.has(r.status)) return true;
     return r.flag == null || r.flag === "NOT_AVAILABLE";
   });
-  if (!targets.length) return { ...empty, reason: "no blank parameters" };
+  if (!targets.length) {
+    // analyze-run deferred the run to PROCESSING so the loading screen waited;
+    // nothing to fill, so finalize it back to DONE.
+    await prisma.analysisRun.update({ where: { id: runId }, data: { status: "DONE" } }).catch(() => {});
+    return { ...empty, reason: "no blank parameters" };
+  }
 
   // Build lane sections (grouped by section; sequential 1..N numbering in order).
   const sectionMeta = new Map(sections.map((s, i) => [s.code, { number: i + 1, title: s.name }]));
@@ -140,7 +145,14 @@ export async function munsBackfill(
     );
     await prisma.analysisRun.update({
       where: { id: runId },
-      data: { summaryJson: summary as never, itemsDone: summary.itemsDone, itemsError: summary.itemsError },
+      // Finalize the run status too — analyze-run deferred it to PROCESSING so
+      // the loading screen waited for this backfill to finish.
+      data: {
+        status: summary.complete ? "DONE" : "PARTIAL",
+        summaryJson: summary as never,
+        itemsDone: summary.itemsDone,
+        itemsError: summary.itemsError,
+      },
     });
   } catch (e) {
     log(`summary refresh skipped: ${(e as Error).message}`);

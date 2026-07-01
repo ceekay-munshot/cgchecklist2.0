@@ -240,6 +240,14 @@ async function main() {
       `gate=${outcome.summary.nonNegotiable.gatePass ? "PASS" : "FAIL"}`,
   );
   await writeReport(runId, outcome);
+
+  // If a MUNS backfill step follows (MUNS_TOKEN set), keep the run OUT of the
+  // terminal DONE state so the on-demand loading screen waits for the blanks to
+  // be filled before opening the report. muns-backfill sets the final status.
+  if (process.env.MUNS_TOKEN && outcome.status === "DONE") {
+    await prisma.analysisRun.update({ where: { id: runId }, data: { status: "PROCESSING" } }).catch(() => {});
+    console.log("Deferring DONE until MUNS backfill completes.");
+  }
 }
 
 main()

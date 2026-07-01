@@ -43,9 +43,18 @@ async function main() {
     return;
   }
   console.log(`MUNS backfill for run ${runId} …`);
-  const outcome = await munsBackfill(runId, { log: (m) => console.log(m) });
-  console.log("\n=== MUNS backfill summary ===");
-  console.log(JSON.stringify(outcome, null, 2));
+  try {
+    const outcome = await munsBackfill(runId, { log: (m) => console.log(m) });
+    console.log("\n=== MUNS backfill summary ===");
+    console.log(JSON.stringify(outcome, null, 2));
+  } finally {
+    // Never leave the run stuck in the deferred PROCESSING state (e.g. if MUNS
+    // errored mid-run): finalize it so the loading screen can open the report.
+    const run = await prisma.analysisRun.findUnique({ where: { id: runId }, select: { status: true } });
+    if (run?.status === "PROCESSING") {
+      await prisma.analysisRun.update({ where: { id: runId }, data: { status: "DONE" } }).catch(() => {});
+    }
+  }
 }
 
 main()
