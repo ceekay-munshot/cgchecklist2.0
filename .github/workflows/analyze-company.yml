@@ -45,6 +45,10 @@ jobs:
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      # MUNS Chat API — fills the remaining (NA) parameters after the normal pass.
+      MUNS_TOKEN: ${{ secrets.MUNS_TOKEN }}
+      USER_INDEX: ${{ secrets.USER_INDEX }}
+      CONTEXT_EMAIL: ${{ secrets.CONTEXT_EMAIL }}
 
     steps:
       - name: Checkout
@@ -92,6 +96,14 @@ jobs:
           else
             npm run analyze-run -- "$TICKER"
           fi
+
+      # Fill the remaining NOT_AVAILABLE parameters via MUNS, then re-classify
+      # with the existing green/red-flag logic. Skips cleanly if MUNS_TOKEN unset.
+      - name: MUNS backfill ${{ inputs.ticker }} (remaining params)
+        if: env.MUNS_TOKEN != ''
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: npm run muns-backfill -- "$TICKER"
 
       - name: Upload analysis report
         if: always()
