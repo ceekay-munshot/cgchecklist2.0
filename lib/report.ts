@@ -167,31 +167,51 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
   };
 }
 
-/** One card per company (its latest run) for the landing/list page. */
+/**
+ * One card per company (its latest run) for the landing/list page.
+ *
+ * Batched to 3 queries total (companies → latest runs → grouped flag counts)
+ * instead of the old 1 + 2×N round-trips, which made the home page crawl over
+ * the Accelerate connection once a handful of companies existed.
+ */
 export async function listCompanyCards(): Promise<CompanyCard[]> {
   const companies = await prisma.company.findMany({ orderBy: { name: "asc" } });
+  if (!companies.length) return [];
+  const companyIds = companies.map((c) => c.id);
+
+  // Latest run per company — one query, newest first, keep the first per company.
+  const runs = await prisma.analysisRun.findMany({
+    where: { companyId: { in: companyIds } },
+    orderBy: { createdAt: "desc" },
+  });
+  const latestRun = new Map<string, (typeof runs)[number]>();
+  for (const r of runs) if (!latestRun.has(r.companyId)) latestRun.set(r.companyId, r);
+
+  const runIds = [...latestRun.values()].map((r) => r.id);
+  // Committed flag tallies for all those runs — one groupBy instead of N findMany.
+  const grouped = runIds.length
+    ? await prisma.itemResult.groupBy({
+        by: ["runId", "flag"],
+        where: { runId: { in: runIds }, status: { in: ["DONE", "NEEDS_REVIEW"] } },
+        _count: { _all: true },
+      })
+    : [];
+  const tally = new Map<string, { green: number; red: number; neutral: number; na: number }>();
+  for (const g of grouped) {
+    const t = tally.get(g.runId) ?? { green: 0, red: 0, neutral: 0, na: 0 };
+    const n = g._count._all;
+    if (g.flag === "GREEN") t.green += n;
+    else if (g.flag === "RED") t.red += n;
+    else if (g.flag === "NEUTRAL") t.neutral += n;
+    else if (g.flag === NA) t.na += n;
+    tally.set(g.runId, t);
+  }
+
   const cards: CompanyCard[] = [];
   for (const c of companies) {
-    const run = await prisma.analysisRun.findFirst({
-      where: { companyId: c.id },
-      orderBy: { createdAt: "desc" },
-    });
+    const run = latestRun.get(c.id);
     if (!run) continue;
-    const results = await prisma.itemResult.findMany({
-      where: { runId: run.id },
-      select: { status: true, flag: true },
-    });
-    let green = 0,
-      red = 0,
-      neutral = 0,
-      na = 0;
-    for (const r of results) {
-      if (!isCommitted(r.status)) continue;
-      if (r.flag === "GREEN") green++;
-      else if (r.flag === "RED") red++;
-      else if (r.flag === "NEUTRAL") neutral++;
-      else if (r.flag === NA) na++;
-    }
+    const t = tally.get(run.id) ?? { green: 0, red: 0, neutral: 0, na: 0 };
     const summary = run.summaryJson as unknown as RunSummary | null;
     cards.push({
       ticker: c.ticker,
@@ -200,12 +220,12 @@ export async function listCompanyCards(): Promise<CompanyCard[]> {
       sector: c.sector ?? null,
       runId: run.id,
       status: run.status,
-      answered: green + red + neutral,
-      total: green + red + neutral + na,
-      reds: red,
-      green,
-      neutral,
-      na,
+      answered: t.green + t.red + t.neutral,
+      total: t.green + t.red + t.neutral + t.na,
+      reds: t.red,
+      green: t.green,
+      neutral: t.neutral,
+      na: t.na,
       gatePass: summary?.nonNegotiable?.gatePass ?? null,
       updatedAt: (run.lastProcessedAt ?? run.createdAt).toISOString(),
     });

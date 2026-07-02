@@ -19,6 +19,7 @@
     "analyze": "node --env-file-if-exists=.env --import tsx scripts/analyze-validate.ts",
     "analyze-run": "node --env-file-if-exists=.env --import tsx scripts/analyze-run.ts",
     "muns-backfill": "node --env-file-if-exists=.env --import tsx scripts/muns-backfill.ts",
+    "resume-incomplete": "node --env-file-if-exists=.env --import tsx scripts/resume-incomplete.ts",
     "report-export": "node --env-file-if-exists=.env --import tsx scripts/report-export.ts"
   },
   "prisma": {

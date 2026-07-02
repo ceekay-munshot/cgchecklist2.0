@@ -8,9 +8,10 @@ export default async function Home() {
   let cards: CompanyCard[] = [];
   let dbError = false;
   try {
-    // Only show companies that actually produced a report — hide half-run
-    // (QUEUED / errored / 0-answered) shells.
-    cards = (await listCompanyCards()).filter((c) => c.answered > 0);
+    // Only surface FULLY COMPLETE runs. A half-finished run (interrupted job,
+    // exhausted quota) stays hidden until the hourly resume job drives it to
+    // DONE — so the list never shows incomplete output.
+    cards = (await listCompanyCards()).filter((c) => c.status === "DONE");
   } catch {
     dbError = true;
   }
