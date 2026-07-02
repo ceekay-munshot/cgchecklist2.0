@@ -181,7 +181,7 @@ function LoadingModal({
 
   return (
     <div className="fixed inset-0 z-[100] overflow-y-auto">
-      <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm" aria-hidden />
+      <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md" aria-hidden />
       <div
         role="dialog"
         aria-modal="true"
@@ -190,7 +190,7 @@ function LoadingModal({
         onClick={onClose}
       >
         <div
-          className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+          className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
           onClick={(e) => e.stopPropagation()}
         >
         {/* header */}
@@ -206,7 +206,7 @@ function LoadingModal({
         </div>
 
         {/* progress bar */}
-        <div className="mt-5">
+        <div className="mt-4">
           <div
             role="progressbar"
             aria-valuenow={pct}
@@ -226,14 +226,14 @@ function LoadingModal({
         </div>
 
         {/* phase checklist */}
-        <ul className="mt-5 space-y-2">
+        <ul className="mt-4 space-y-1.5">
           {PHASES.map((phase, i) => {
             const status = i < activeIdx ? "done" : i === activeIdx && !complete ? "active" : complete ? "done" : "pending";
             return (
-              <li key={phase.label} className={`flex items-start gap-3 text-sm ${status === "pending" ? "text-[#6f7d97]" : "text-[#0a1422]"}`}>
+              <li key={phase.label} className={`flex items-center gap-2.5 text-[13px] ${status === "pending" ? "text-[#6f7d97]" : "text-[#0a1422]"}`}>
                 <span
                   aria-hidden
-                  className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                     status === "done"
                       ? "bg-[#2f9c50] text-white"
                       : status === "active"
@@ -243,7 +243,7 @@ function LoadingModal({
                 >
                   {status === "done" ? "✓" : status === "active" ? <span className="block h-2 w-2 animate-pulse rounded-full bg-[#237a3e]" /> : i + 1}
                 </span>
-                <span className="leading-5">{phase.label}</span>
+                <span className="leading-snug">{phase.label}</span>
               </li>
             );
           })}
@@ -251,16 +251,16 @@ function LoadingModal({
 
         {/* dispatch failure diagnostic (kept) */}
         {!dispatched && (
-          <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-700">
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-700">
             ⏳ Couldn’t auto-start. <b>Reason:</b> <code className="rounded bg-amber-100 px-1 py-0.5">{dispatchError ?? "unknown"}</code>. You can run the{" "}
             <b>analyze-company</b> Action for <b>{ticker}</b> manually meanwhile.
           </div>
         )}
 
         {/* note */}
-        <p className="mt-5 rounded-lg bg-[#f7f9fc] px-3 py-2 text-[12px] leading-relaxed text-[#525f78]">
-          A full analysis of all 106 checklist items typically takes a few minutes. You can leave this tab open — it opens the report the moment
-          everything (including the research fill) is complete.
+        <p className="mt-4 rounded-lg bg-[#f7f9fc] px-3 py-2 text-[12px] leading-relaxed text-[#525f78]">
+          Analysing all 106 checklist items usually takes a few minutes. You can leave this tab open — the report opens the moment everything
+          (including the research fill) is done.
         </p>
 
         {/* cancel */}
