@@ -25,18 +25,24 @@ export async function GET(req: Request, ctx: { params: Promise<{ ticker: string 
     return Response.json({ phase: "none", percent: 0, stage: "No analysis yet", ready: false, done: false });
   }
 
-  const [doneItems, checklistTotal] = await Promise.all([
+  const [doneItems, answered, checklistTotal] = await Promise.all([
     prisma.itemResult.count({ where: { runId: run.id, status: { in: ["DONE", "NEEDS_REVIEW"] } } }),
+    // "Answered" = a real green/red/neutral verdict (not a blank/NA). This keeps
+    // rising through the research phase, so the bar keeps moving past the base pass.
+    prisma.itemResult.count({
+      where: { runId: run.id, status: { in: ["DONE", "NEEDS_REVIEW"] }, flag: { in: ["GREEN", "RED", "NEUTRAL"] } },
+    }),
     run.itemsTotal > 0 ? Promise.resolve(run.itemsTotal) : prisma.checklistItem.count(),
   ]);
 
-  const progress = computeProgress(run.status, doneItems, checklistTotal);
+  const progress = computeProgress(run.status, doneItems, checklistTotal, answered);
   return Response.json({
     ...progress,
     runStatus: run.status,
     runId: run.id,
     ticker: run.company?.ticker ?? null,
     doneItems,
+    answered,
     total: checklistTotal,
   });
 }

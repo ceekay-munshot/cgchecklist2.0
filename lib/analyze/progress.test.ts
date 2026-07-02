@@ -49,6 +49,15 @@ describe("computeProgress", () => {
     expect(start.percent).toBeGreaterThanOrEqual(15);
   });
 
+  it("keeps moving during the research phase — a rising answered count lifts the bar even when every item is already committed", () => {
+    const base = computeProgress("PROCESSING", 106, 106, 70); // base pass done, 70 real answers
+    const later = computeProgress("PROCESSING", 106, 106, 95); // research filled more blanks
+    const filled = computeProgress("PROCESSING", 106, 106, 106);
+    expect(base.percent).toBeLessThan(later.percent);
+    expect(later.percent).toBeLessThan(filled.percent);
+    expect(base.stage.toLowerCase()).toContain("research");
+  });
+
   it("falls back to the full checklist when total is unknown", () => {
     const p = computeProgress("PROCESSING", CHECKLIST_TOTAL / 2, 0);
     expect(p.percent).toBeGreaterThan(15);

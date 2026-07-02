@@ -45,14 +45,30 @@ export interface Progress {
 }
 
 /**
- * Map a run's DB status + committed-item count to a progress bar. Harvest takes
- * the first 15%; per-item analysis fills 15→99%; DONE is 100%. `total` falls
- * back to the full checklist when the run hasn't stamped itemsTotal yet.
+ * Map a run's DB status + item counts to a progress bar.
+ *
+ * Harvest takes the first 15%. The rest is driven by TWO signals so the bar
+ * never freezes: `doneItems` (items that reached a terminal state, incl. blanks)
+ * carries the bulk, and `answered` (items with a real green/red/neutral verdict)
+ * carries the tail. This matters because after the base pass EVERY item is
+ * already "committed" (a not-yet-answered item is committed as a blank), yet the
+ * research/backfill phase then spends minutes turning those blanks into real
+ * answers — during which `doneItems` is flat but `answered` keeps rising. Using
+ * both keeps the bar moving through that phase instead of parking at 99%.
+ *
+ * `total` falls back to the full checklist when the run hasn't stamped itemsTotal
+ * yet. `answered` defaults to `doneItems` when a caller doesn't supply it.
  */
-export function computeProgress(status: string, doneItems: number, total: number): Progress {
+export function computeProgress(status: string, doneItems: number, total: number, answered?: number): Progress {
   const t = total > 0 ? total : CHECKLIST_TOTAL;
-  const frac = Math.min(1, Math.max(0, doneItems / t));
-  const proc = Math.min(99, Math.round(15 + frac * 84)); // 15..99
+  const ans = Math.min(answered ?? doneItems, doneItems);
+  const doneFrac = Math.min(1, Math.max(0, doneItems / t));
+  const ansFrac = Math.min(1, Math.max(0, ans / t));
+  // 15 (harvest done) + up to 68 from terminal items + up to 15 from answered.
+  const proc = Math.min(98, Math.round(15 + doneFrac * 68 + ansFrac * 15));
+  // Base pass finished (all items terminal) but the run isn't DONE → it's in the
+  // research/backfill phase, filling the remaining blanks with real answers.
+  const researching = doneItems >= t;
 
   switch (status) {
     case "QUEUED":
@@ -62,12 +78,21 @@ export function computeProgress(status: string, doneItems: number, total: number
     case "HARVESTED":
       return { phase: "harvesting", percent: 15, stage: "Documents ready — starting analysis…", emoji: "📑", ready: false, done: false };
     case "PROCESSING":
-      return { phase: "processing", percent: proc, stage: `Analysing checklist · ${doneItems} of ${t} items`, emoji: "🔍", ready: false, done: false };
+      return {
+        phase: "processing",
+        percent: proc,
+        stage: researching
+          ? `Researching remaining parameters · ${ans} of ${t} answered`
+          : `Analysing checklist · ${doneItems} of ${t} items`,
+        emoji: "🔍",
+        ready: false,
+        done: false,
+      };
     case "PARTIAL":
       return {
         phase: "partial",
         percent: Math.max(15, proc),
-        stage: `Paused at ${doneItems}/${t} — will resume on the next run`,
+        stage: `Paused at ${ans}/${t} answered — will resume on the next run`,
         emoji: "⏸️",
         ready: doneItems > 0,
         done: true,
