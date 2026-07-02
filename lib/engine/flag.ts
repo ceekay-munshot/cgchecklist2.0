@@ -55,7 +55,9 @@ function judgePrompt(item: EngineItem, analysis: Analysis): string {
     `on the finding/evidence above. Use ONLY evidence of the type this item asks about — ` +
     `if the finding is actually about a DIFFERENT concept (e.g. goodwill is not a ` +
     `contingent liability; a revenue figure is not remuneration), choose NEUTRAL. ` +
-    `If it is ambiguous or unsupported, choose NEUTRAL. Give a ONE-sentence reason.`
+    `If it is ambiguous or unsupported, choose NEUTRAL. For "reason", give ONE or TWO ` +
+    `sentences an analyst would sign off on: name the SPECIFIC number or threshold that ` +
+    `drives the call and the governance implication — do NOT merely restate the rule.`
   );
 }
 

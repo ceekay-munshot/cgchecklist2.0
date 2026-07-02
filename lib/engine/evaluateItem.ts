@@ -45,7 +45,7 @@ export function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: Flag
       reason && !rationale.toLowerCase().includes(reason.toLowerCase())
         ? `${rationale} ${reason}`
         : rationale;
-    return withReason.slice(0, 600);
+    return withReason.slice(0, 700);
   }
   const value = (analysis.value ?? "").trim();
   const hasValue = value && value.toLowerCase() !== "not available";
@@ -55,7 +55,7 @@ export function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: Flag
       : reason && !reason.includes(value)
         ? `${value} — ${reason}`
         : value;
-  return v.slice(0, 600);
+  return v.slice(0, 700);
 }
 
 /**

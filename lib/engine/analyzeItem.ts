@@ -208,8 +208,8 @@ async function analyzeNumericFromPassages(item: EngineItem, evidence: Evidence):
       : "";
   const rationale =
     data.independentDirectors && data.totalDirectors
-      ? `The board comprises ${data.totalDirectors} directors, of whom ${data.independentDirectors} are independent — ${round1(pct)}% independent representation.`
-      : `Independent directors make up ${round1(pct)}% of the board.`;
+      ? `The board has ${data.totalDirectors} directors, of whom ${data.independentDirectors} are independent — ${round1(pct)}% independent. SEBI LODR requires at least one-third independent directors (one-half where the chairperson is executive or promoter-linked), so this is the level to weigh independence and boardroom oversight against.`
+      : `Independent directors make up ${round1(pct)}% of the board, to be read against the SEBI LODR minimum of one-third (one-half where the chair is executive/promoter-linked).`;
   return {
     value: `${round1(pct)}% independent${counts}`,
     rationale,
@@ -282,10 +282,12 @@ async function analyzeAuditCommittee(item: EngineItem, evidence: Evidence): Prom
   const rParts: string[] = [];
   if (data.independentMembers != null && data.totalMembers != null) {
     rParts.push(
-      `The audit committee has ${data.totalMembers} members, of whom ${data.independentMembers} are independent.`,
+      `The audit committee has ${data.totalMembers} members, of whom ${data.independentMembers} are independent; SEBI LODR requires at least three members with two-thirds independent and an independent chair.`,
     );
   }
-  if (data.meetings != null) rParts.push(`It met ${data.meetings} time(s) during the year.`);
+  if (data.meetings != null) {
+    rParts.push(`It met ${data.meetings} time(s) during the year, against the SEBI minimum of four.`);
+  }
   return {
     value,
     rationale: rParts.length ? rParts.join(" ") : undefined,
@@ -329,19 +331,22 @@ const QUAL_SCHEMA = {
  * the actual figures/dates/names and why they matter — no green/red call.
  */
 const RATIONALE_INSTRUCTION =
-  `Return TWO things:\n` +
-  `  • "value": the concise fact — a short phrase (this drives the flag), e.g. ` +
-  `"18.2% independent (2 of 11)" or "Auditor rotated in FY2023". If the item is ` +
-  `inherently a COUNT or a RATE, "value" MUST contain that number.\n` +
-  `  • "rationale": 2-3 complete sentences written for a human reader. State the ` +
-  `SPECIFIC facts from the excerpts — exact figures, percentages, counts, dates, ` +
-  `names, year-on-year change — and briefly why they matter for governance. Be ` +
-  `concrete and quantitative: put NUMBERS wherever a number belongs (counts, %, ` +
-  `₹ amounts, ratios, how many of how many). Never vague — "high calibre" alone is ` +
-  `NOT acceptable; say who / how much / how many / when. When the item is about a ` +
-  `set of people (e.g. directors), enumerate the relevant names/counts rather than ` +
-  `generalising. Do NOT declare green/red/pass/fail and do NOT speculate beyond the ` +
-  `evidence.\n` +
+  `You are a BUY-SIDE governance analyst writing for an investment committee. Don't ` +
+  `just extract — ASSESS. Return TWO things:\n` +
+  `  • "value": the one-line headline fact, WITH the key number, that drives the ` +
+  `flag, e.g. "18.2% independent (2 of 11)" or "Auditor rotated in FY2023". If the ` +
+  `item is inherently a COUNT or a RATE, "value" MUST contain that number.\n` +
+  `  • "rationale": 2-4 tight sentences of ANALYSIS (as many as the evidence ` +
+  `supports — do NOT pad), in this order: (1) the specific facts WITH numbers — ` +
+  `counts, %, ₹ amounts, ratios, how-many-of-how-many, and the actual NAMES when it ` +
+  `is about people; (2) CONTEXT — how it reads against the relevant norm (SEBI LODR / ` +
+  `Ind AS / Companies Act minimum) and against the prior-year trend if the excerpts ` +
+  `show it; (3) the SO-WHAT — what it signals about governance quality or investor ` +
+  `risk. Write the way an analyst writes: sharp, quantified, names named, and call ` +
+  `out anything that looks like box-ticking, a boilerplate/thin disclosure, or a gap. ` +
+  `Stay STRICTLY grounded in the excerpts — no speculation, no invented numbers; if a ` +
+  `needed detail isn't disclosed, SAY SO plainly (a disclosure gap is itself a ` +
+  `finding). Do NOT declare green/red/pass/fail.\n` +
   `FRESHNESS: use the MOST RECENT fiscal year present in the excerpts; if several ` +
   `years appear, prefer the latest and IGNORE older ones. State which fiscal year ` +
   `the figures are for (e.g. "(FY2025-26)").\n`;
