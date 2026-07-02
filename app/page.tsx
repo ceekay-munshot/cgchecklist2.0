@@ -8,10 +8,10 @@ export default async function Home() {
   let cards: CompanyCard[] = [];
   let dbError = false;
   try {
-    // Only surface FULLY COMPLETE runs. A half-finished run (interrupted job,
-    // exhausted quota) stays hidden until the hourly resume job drives it to
-    // DONE — so the list never shows incomplete output.
-    cards = (await listCompanyCards()).filter((c) => c.status === "DONE");
+    // Only surface complete, high-coverage runs: DONE and with MORE THAN 85 of
+    // the 106 items actually answered (green/red/neutral, not blanks). This hides
+    // thin/half-filled companies (e.g. 34/106, 51/106) that read as low quality.
+    cards = (await listCompanyCards()).filter((c) => c.status === "DONE" && c.answered > 85);
   } catch {
     dbError = true;
   }

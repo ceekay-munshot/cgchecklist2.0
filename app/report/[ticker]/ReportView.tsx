@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { memo, useDeferredValue, useMemo, useState } from "react";
 import type { CompanyReport, FlagName, ReportItem, ReportSection } from "@/lib/report";
 import { useAnalyzeRun } from "@/app/components/AnalyzeRun";
 
@@ -27,8 +27,11 @@ export function ReportView({ report }: { report: CompanyReport }) {
   const totals = report.summary?.totals ?? { green: 0, red: 0, neutral: 0, na: 0 };
   const gatePass = report.summary?.nonNegotiable?.gatePass ?? null;
 
+  // Defer the query so typing/clicking stays responsive — React can keep the
+  // input snappy and re-filter the 106 rows in the background.
+  const deferredQuery = useDeferredValue(query);
   const sections = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     return report.sections
       .map((s) => ({
         ...s,
@@ -45,7 +48,7 @@ export function ReportView({ report }: { report: CompanyReport }) {
         }),
       }))
       .filter((s) => s.items.length > 0);
-  }, [report.sections, filter, query]);
+  }, [report.sections, filter, deferredQuery]);
 
   const distTotal = Math.max(1, totals.green + totals.red + totals.neutral + totals.na);
 
@@ -191,7 +194,9 @@ function SectionCard({ section }: { section: ReportSection }) {
   );
 }
 
-function ItemRow({ it }: { it: ReportItem }) {
+// Memoised: rows keep the same ReportItem reference across filter/search
+// changes, so unchanged rows skip re-rendering entirely.
+const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
   const f = effective(it);
   const meta = FLAG[f];
   const stale = !it.flag && !!it.staleFlag;
@@ -247,7 +252,7 @@ function ItemRow({ it }: { it: ReportItem }) {
       </div>
     </li>
   );
-}
+});
 
 function Confidence({ v }: { v: number | null }) {
   if (v == null) return null;
