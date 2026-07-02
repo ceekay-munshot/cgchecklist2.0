@@ -107,17 +107,32 @@ function CompanyTile({ c }: { c: CompanyCard }) {
       </div>
 
       {/* compact stats */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5 text-xs font-semibold tabular-nums">
-          <Dot className="bg-emerald-500" n={c.green} />
-          <Dot className="bg-rose-500" n={c.reds} />
-          <Dot className="bg-amber-400" n={c.neutral} />
-          <Dot className="bg-slate-300" n={c.na} />
-        </div>
-        <span className="text-[10.5px] font-medium tabular-nums text-slate-400">{c.answered}/{c.total}</span>
+      <div className="flex items-center gap-2.5 text-xs font-semibold tabular-nums">
+        <Dot className="bg-emerald-500" n={c.green} />
+        <Dot className="bg-rose-500" n={c.reds} />
+        <Dot className="bg-amber-400" n={c.neutral} />
+        <Dot className="bg-slate-300" n={c.na} />
+      </div>
+
+      {/* footer: last-run date + answered count */}
+      <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[10.5px] text-slate-400">
+        <span title={new Date(c.updatedAt).toLocaleString()}>Updated {timeAgo(c.updatedAt)}</span>
+        <span className="tabular-nums">{c.answered}/{c.total}</span>
       </div>
     </Link>
   );
+}
+
+/** Compact "x ago" for the card's last-run stamp. */
+function timeAgo(iso: string): string {
+  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const d = Math.floor(secs / 86400);
+  if (d >= 1) return d === 1 ? "1 day ago" : `${d} days ago`;
+  const h = Math.floor(secs / 3600);
+  if (h >= 1) return h === 1 ? "1 hour ago" : `${h} hours ago`;
+  const m = Math.floor(secs / 60);
+  if (m >= 1) return m === 1 ? "1 min ago" : `${m} min ago`;
+  return "just now";
 }
 
 function Dot({ n, className }: { n: number; className: string }) {

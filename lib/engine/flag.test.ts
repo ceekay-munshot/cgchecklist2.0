@@ -48,6 +48,20 @@ describe("assignFlag", () => {
     expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
   });
 
+  it("numeric item with an unparseable value falls through to the judge (no 'could not parse' dead-end)", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({
+      flag: "GREEN",
+      reason: "Every director attended all board meetings.",
+    });
+    const r = await assignFlag(
+      item({ id: "A99-01", outputFormat: "Count", greenFlag: "100%", redFlag: "<75%" }),
+      { value: "Full attendance", confidence: "medium" },
+    );
+    expect(r.flag).toBe("GREEN");
+    expect(r.reason).not.toMatch(/could not parse/i);
+    expect(asMock(llm.reasoning.completeJSON)).toHaveBeenCalled();
+  });
+
   it("maps a 'not available' value to NOT_AVAILABLE", async () => {
     const r = await assignFlag(item({ id: "A4-01", outputFormat: "Yes/No" }), { value: "not available", confidence: "low" });
     expect(r.flag).toBe("NOT_AVAILABLE");

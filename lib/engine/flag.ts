@@ -121,13 +121,15 @@ export async function assignFlag(
     return applyGate(item, { flag: amountFlag.flag, reason: amountFlag.reason, provider: "deterministic" });
   }
 
-  // NUMERIC items with parseable green/red bands are classified deterministically —
-  // EXCEPT note items, whose value is a figures statement judged qualitatively.
+  // NUMERIC items with a clean parseable number are classified deterministically
+  // against their green/red bands — EXCEPT note items, whose value is a figures
+  // statement judged qualitatively. When the extractor returned a value WITHOUT a
+  // clean number (e.g. "Full attendance", "not overboarded"), we no longer
+  // dead-end with a "could not parse a number" verdict: we fall through to the
+  // qualitative judge below, which reads the value + evidence against the item's
+  // descriptions and returns a real green/red/neutral call.
   const noteItem = evidenceStrategyFor(item).useGeminiNote === true;
-  if (kindOf(item) === "NUMERIC" && !noteItem) {
-    if (num == null) {
-      return applyGate(item, { flag: "NEUTRAL", reason: `Could not parse a number from "${analysis.value}".` });
-    }
+  if (kindOf(item) === "NUMERIC" && !noteItem && num != null) {
     const c = classifyNumeric(num, item.greenFlag, item.redFlag);
     return applyGate(item, { flag: c.flag, reason: c.reason });
   }

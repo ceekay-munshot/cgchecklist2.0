@@ -331,13 +331,20 @@ const QUAL_SCHEMA = {
 const RATIONALE_INSTRUCTION =
   `Return TWO things:\n` +
   `  • "value": the concise fact — a short phrase (this drives the flag), e.g. ` +
-  `"18.2% independent (2 of 11)" or "Auditor rotated in FY2023".\n` +
+  `"18.2% independent (2 of 11)" or "Auditor rotated in FY2023". If the item is ` +
+  `inherently a COUNT or a RATE, "value" MUST contain that number.\n` +
   `  • "rationale": 2-3 complete sentences written for a human reader. State the ` +
-  `SPECIFIC facts from the excerpts — exact figures, percentages, dates, names, ` +
-  `year-on-year change — and briefly why they matter for governance. Be concrete ` +
-  `and quantitative; never vague ("high calibre" alone is not acceptable — say who/` +
-  `how much/when). Do NOT declare green/red/pass/fail and do NOT speculate beyond ` +
-  `the evidence.\n`;
+  `SPECIFIC facts from the excerpts — exact figures, percentages, counts, dates, ` +
+  `names, year-on-year change — and briefly why they matter for governance. Be ` +
+  `concrete and quantitative: put NUMBERS wherever a number belongs (counts, %, ` +
+  `₹ amounts, ratios, how many of how many). Never vague — "high calibre" alone is ` +
+  `NOT acceptable; say who / how much / how many / when. When the item is about a ` +
+  `set of people (e.g. directors), enumerate the relevant names/counts rather than ` +
+  `generalising. Do NOT declare green/red/pass/fail and do NOT speculate beyond the ` +
+  `evidence.\n` +
+  `FRESHNESS: use the MOST RECENT fiscal year present in the excerpts; if several ` +
+  `years appear, prefer the latest and IGNORE older ones. State which fiscal year ` +
+  `the figures are for (e.g. "(FY2025-26)").\n`;
 
 const LARGE_PASSAGE_CHARS = 12_000;
 
