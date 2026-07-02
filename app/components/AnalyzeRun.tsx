@@ -180,19 +180,16 @@ function LoadingModal({
   const elapsed = formatElapsed(now - startedAt);
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto">
-      <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md" aria-hidden />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Fully opaque backdrop — the app never shows through */}
+      <div className="fixed inset-0 bg-gradient-to-b from-white via-slate-50 to-slate-100" aria-hidden onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Analysing company"
-        className="relative flex min-h-full items-center justify-center p-4 sm:p-6"
-        onClick={onClose}
+        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.18)] ring-1 ring-black/5 sm:p-6"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
-          onClick={(e) => e.stopPropagation()}
-        >
         {/* header */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -257,14 +254,13 @@ function LoadingModal({
           </div>
         )}
 
-        {/* note */}
-        <p className="mt-4 rounded-lg bg-[#f7f9fc] px-3 py-2 text-[12px] leading-relaxed text-[#525f78]">
-          Analysing all 106 checklist items usually takes a few minutes. You can leave this tab open — the report opens the moment everything
-          (including the research fill) is done.
+        {/* note (one line — keeps the modal short) */}
+        <p className="mt-4 rounded-lg bg-[#f7f9fc] px-3 py-2 text-center text-[12px] leading-relaxed text-[#525f78]">
+          Opens automatically when done — you can leave this tab open.
         </p>
 
         {/* cancel */}
-        <div className="mt-4 flex justify-center">
+        <div className="mt-3 flex justify-center">
           <button
             type="button"
             onClick={onClose}
@@ -275,7 +271,6 @@ function LoadingModal({
             </svg>
             {failed ? "Close" : "Hide"}
           </button>
-        </div>
         </div>
       </div>
     </div>
