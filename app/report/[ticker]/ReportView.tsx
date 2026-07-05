@@ -200,17 +200,32 @@ const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
   const f = effective(it);
   const meta = FLAG[f];
   const stale = !it.flag && !!it.staleFlag;
+  const [whyOpen, setWhyOpen] = useState(false);
   // Lead with the reasoned narrative (verdict); fall back to the concise value.
   const detail =
     it.verdict && it.verdict.toLowerCase() !== "not available" ? it.verdict : it.value;
 
   return (
     <li className="flex gap-4 px-5 py-4 transition hover:bg-slate-50/70">
-      <div className="pt-0.5">
+      <div className="flex flex-col items-center gap-1.5 pt-0.5">
         <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold ring-1 ${meta.chip} ${stale ? "opacity-60" : ""}`}>
           <span>{meta.emoji}</span>
           {meta.label}
         </span>
+        <button
+          type="button"
+          onClick={() => setWhyOpen((o) => !o)}
+          aria-label="Why this flag?"
+          aria-expanded={whyOpen}
+          title="Why this flag?"
+          className={`grid h-5 w-5 place-items-center rounded-full border text-[11px] font-bold transition ${
+            whyOpen
+              ? "border-indigo-300 bg-indigo-50 text-indigo-600"
+              : "border-slate-200 bg-white text-slate-400 hover:border-indigo-200 hover:text-indigo-500"
+          }`}
+        >
+          ?
+        </button>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -236,6 +251,7 @@ const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
             “{it.evidenceQuote}”
           </p>
         )}
+        {whyOpen && <WhyPanel it={it} flag={f} />}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         <Confidence v={it.confidence} />
@@ -253,6 +269,55 @@ const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
     </li>
   );
 });
+
+// The audit trace behind a flag: what decided it, how sure, and from where.
+function WhyPanel({ it, flag }: { it: ReportItem; flag: FlagName }) {
+  const meta = FLAG[flag];
+  return (
+    <div className="mt-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-slate-600">Why this is {meta.label.toLowerCase()}</span>
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          {confidenceLabel(it.confidence)} confidence
+        </span>
+      </div>
+      <p className="mt-1.5 leading-relaxed text-slate-600">
+        {it.verdict || it.value || "No reasoning was recorded for this item."}
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-200/70 pt-2 text-[11px] text-slate-400">
+        <span>
+          Decided by <b className="font-semibold text-slate-500">{basisLabel(it.provider)}</b>
+        </span>
+        {it.source.url ? (
+          <a
+            href={it.source.url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-indigo-500 transition hover:text-indigo-700"
+          >
+            source ↗{it.source.page != null ? ` p.${it.source.page}` : ""}
+          </a>
+        ) : (
+          <span>Source: {it.source.page != null ? `p.${it.source.page}` : "—"}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function confidenceLabel(v: number | null): string {
+  if (v == null) return "—";
+  return v >= 0.8 ? "High" : v >= 0.45 ? "Medium" : "Low";
+}
+
+/** Plain-language "how was this flag decided" from the provider string. */
+function basisLabel(provider: string | null): string {
+  const p = (provider ?? "").toLowerCase();
+  if (!p) return "the engine";
+  if (p.includes("deterministic")) return "a deterministic rule (no AI)";
+  if (p.includes("muns")) return "AI research over the web";
+  return `AI reasoning over the filings`;
+}
 
 function Confidence({ v }: { v: number | null }) {
   if (v == null) return null;
