@@ -96,8 +96,8 @@ function computeDebtToEquity(data: ScreenerStructuredData): { value: string; not
   };
 }
 
-const CFO_RE = /operating activit/i;
-const PAT_RE = /net profit|profit after tax/i;
+const CFO_RE = /operating activit|cash (generated |flow )?from operat|net cash (flow )?from operat/i;
+const PAT_RE = /net profit|profit after tax|profit for the (year|period)/i;
 const EBITDA_RE = /operating profit/i;
 const DEP_RE = /depreciation/i;
 
@@ -111,12 +111,21 @@ export function computeNumeric(
       return computeDebtToEquity(data);
 
     case "cfoToPat": {
-      const cfo = sumRow(data.cashFlow, CFO_RE);
-      const pat = sumRow(data.profitLoss, PAT_RE);
+      // Prefer the cumulative CFO ÷ PAT (the band is defined "cumulative"), but if
+      // a row-label quirk makes either sum unreadable, fall back to the latest
+      // single year so the item still classifies instead of dropping to NA.
+      let cfo = sumRow(data.cashFlow, CFO_RE);
+      let pat = sumRow(data.profitLoss, PAT_RE);
+      let basis = "cumulative";
+      if (cfo == null || pat == null || pat <= 0) {
+        cfo = latestRowNumber(data.cashFlow, CFO_RE);
+        pat = latestRowNumber(data.profitLoss, PAT_RE);
+        basis = "latest-year";
+      }
       if (cfo == null || pat == null || pat <= 0) return null;
       return {
         value: (cfo / pat).toFixed(2),
-        note: `cumulative CFO ${Math.round(cfo)} ÷ PAT ${Math.round(pat)} over reported years`,
+        note: `${basis} CFO ${Math.round(cfo)} ÷ PAT ${Math.round(pat)}`,
       };
     }
 
@@ -193,6 +202,15 @@ export const CUSTOM_NUMERIC: Record<string, (n: number) => NumericClassification
     if (n <= 1) return { flag: "GREEN", reason: `Modest leverage — D/E ${n} (Tier-1); debt level is conservative.` };
     if (n > 2) return { flag: "RED", reason: `High leverage — D/E ${n} (Tier-1).` };
     return { flag: "NEUTRAL", reason: `Moderate leverage — D/E ${n} (Tier-1).` };
+  },
+  // A6-05 CEO-to-median pay ratio. A deliberately SUBJECTIVE judgement: a ratio
+  // is only a governance concern when it is EXTREME and unjustified. A reasonable
+  // multiple is fine (GREEN); the red band is >~100–200x. Anchoring here keeps the
+  // default GREEN so a normal ratio isn't neutral-ed for want of a sector benchmark.
+  "A6-05": (n) => {
+    if (n < 100) return { flag: "GREEN", reason: `CEO-to-median pay ratio ${n}x is within a reasonable range (extreme only above ~100–200x).` };
+    if (n >= 200) return { flag: "RED", reason: `CEO-to-median pay ratio ${n}x is extreme and hard to justify (>200x).` };
+    return { flag: "NEUTRAL", reason: `CEO-to-median pay ratio ${n}x is elevated (100–200x) — reasonable only if clearly justified.` };
   },
 };
 

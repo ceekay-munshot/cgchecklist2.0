@@ -87,6 +87,12 @@ describe("CUSTOM_NUMERIC — classifiers for textual-band items", () => {
     expect(CUSTOM_NUMERIC["A8-11"](1.6).flag).toBe("NEUTRAL");
     expect(CUSTOM_NUMERIC["A8-11"](2.5).flag).toBe("RED");
   });
+  it("A6-05 CEO-to-median pay: reasonable green, only extreme red", () => {
+    expect(CUSTOM_NUMERIC["A6-05"](20).flag).toBe("GREEN");
+    expect(CUSTOM_NUMERIC["A6-05"](80).flag).toBe("GREEN");
+    expect(CUSTOM_NUMERIC["A6-05"](150).flag).toBe("NEUTRAL");
+    expect(CUSTOM_NUMERIC["A6-05"](250).flag).toBe("RED");
+  });
   it("A14-02 debt level anchored on Tier-1 D/E: never red when debt-free", () => {
     // D/E 0.11 (TCS) -> GREEN, never RED — can't contradict A14-01.
     expect(CUSTOM_NUMERIC["A14-02"](0.11).flag).toBe("GREEN");

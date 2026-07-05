@@ -122,6 +122,32 @@ export function extractAmountCr(text: string | null | undefined): number | null 
 }
 
 /**
+ * Does the finding AFFIRMATIVELY state a nil/zero for this exposure? A "no
+ * related-party transactions", "Nil contingent liabilities", "no promoter
+ * pledge", "₹0", "not applicable" etc. is a REAL, favourable finding — a genuine
+ * zero — not a data gap. We must NOT confuse it with "not available / not
+ * disclosed", which stays a gap. Used so a true zero maps to GREEN (immaterial)
+ * instead of a defensive NEUTRAL. General to every ₹-amount item.
+ */
+export function statesNil(text: string | null | undefined): boolean {
+  const t = (text ?? "").toLowerCase();
+  if (!t) return false;
+  // A genuine data gap is NOT a nil — keep it out.
+  if (/\b(not available|not disclosed|no data|could not|unavailable|no information|not found|unable to)\b/.test(t)) {
+    return false;
+  }
+  const exposure =
+    "related[- ]?part|rpt|contingent|outstanding|guarantee|loan|advance|goodwill|pledg|litigation|claim|dispute|off[- ]balance|transaction|exposure|material";
+  return (
+    /\b(nil|none|not applicable|no such)\b/.test(t) ||
+    // "no <up to a few words> <exposure>": no promoter pledge, no related party transactions, no group loans…
+    new RegExp(`\\bno\\b[\\w\\s-]{0,24}(${exposure})`).test(t) ||
+    new RegExp(`\\bzero\\b[\\w\\s-]{0,24}(${exposure})`).test(t) ||
+    /(?:^|[^\d.])(?:₹|rs\.?|inr)?\s*0(?:\.0+)?\s*(?:crore|cr\b|lakh)/.test(t)
+  );
+}
+
+/**
  * Is a ₹-crore amount plausible for a single note line at this company's scale?
  * A single contingent-liability / RPT line larger than ~1.5× the company's
  * revenue (or net worth, whichever bigger) is almost certainly a mis-extraction.
@@ -158,6 +184,11 @@ export function classifyAmount(
 
   const amount = extractAmountCr(value) ?? extractAmountCr(evidenceQuote);
   if (amount == null) {
+    // A genuine nil/none is a real, favourable finding (zero exposure) — GREEN,
+    // not a defensive NEUTRAL. Only a true "can't read it" stays unverified.
+    if (statesNil(value) || statesNil(evidenceQuote)) {
+      return { flag: "GREEN", reason: `Nil / none reported — no material exposure (${value}).` };
+    }
     return { flag: "NEUTRAL", reason: "No amount could be read from the note — materiality unverified; not flagged." };
   }
   if (!scale) {
@@ -321,10 +352,19 @@ export function auditOpinionFlag(value: string, evidenceQuote: string | null | u
   if (modified || realGoingConcern) {
     return { flag: "RED", reason: `Modified audit opinion / going-concern emphasis (${value}).` };
   }
-  if (/\b(unmodified|unqualified|true and fair|clean opinion|without (any )?qualification)\b/.test(text)) {
+  if (/\b(unmodified|unqualified|true and fair|present(s|ed)? fairly|clean opinion|in our opinion|without (any )?qualification)\b/.test(text)) {
     return { flag: "GREEN", reason: `Clean/unmodified audit opinion (${value}).` };
   }
-  return { flag: "NEUTRAL", reason: `No modified opinion or going-concern emphasis identified (${value}).` };
+  // A clean opinion is the NORM, and the green condition here is precisely the
+  // ABSENCE of a qualification/adverse opinion/going-concern emphasis. So when we
+  // have audit-report evidence and found none of those, the honest flag is GREEN
+  // — not a defensive NEUTRAL that reads like a problem. (Only truly context-less
+  // evidence stays NEUTRAL.)
+  const hasAuditContext = /\b(audit|auditor|opinion|financial statements|report of the)\b/.test(text);
+  if (hasAuditContext) {
+    return { flag: "GREEN", reason: `No qualification, adverse opinion or going-concern emphasis identified — clean opinion (${value}).` };
+  }
+  return { flag: "NEUTRAL", reason: `Audit opinion not clearly established (${value}).` };
 }
 
 /**

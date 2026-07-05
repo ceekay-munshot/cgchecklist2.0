@@ -452,8 +452,8 @@
           "item": "Pay vs Sec 197 & profit",
           "description": "Remuneration vs profit cap",
           "output_format": "% of net profit",
-          "green_flag": "≤5% single / ≤10% all, within limits",
-          "red_flag": "Exceeds Sec 197 limits",
+          "green_flag": "≤11% of net profit (within the Sec 197 aggregate limit)",
+          "red_flag": ">11% of net profit (exceeds Sec 197 limit)",
           "source_hint": "",
           "is_non_negotiable": false,
           "threshold_logic": ""

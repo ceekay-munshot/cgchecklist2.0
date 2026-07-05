@@ -12,6 +12,7 @@ import {
   guardAmount,
   isPlausibleAmount,
   parseIndependenceRatio,
+  statesNil,
   type CompanyScale,
 } from "./materiality";
 
@@ -91,6 +92,40 @@ describe("classifyAmount — materiality bands", () => {
   });
   it("returns null for an item with no materiality rule", () => {
     expect(classifyAmount("A1-01", "Rs 226 crore", null, SCALE)).toBeNull();
+  });
+});
+
+describe("statesNil — a real zero, not a data gap", () => {
+  it("recognises explicit nil / none / no-exposure", () => {
+    expect(statesNil("No related party transactions during the year")).toBe(true);
+    expect(statesNil("Nil contingent liabilities")).toBe(true);
+    expect(statesNil("No promoter pledge")).toBe(true);
+    expect(statesNil("₹0 crore")).toBe(true);
+    expect(statesNil("Not applicable")).toBe(true);
+  });
+  it("does NOT treat a data gap as nil", () => {
+    expect(statesNil("not available")).toBe(false);
+    expect(statesNil("not disclosed in the filings")).toBe(false);
+    expect(statesNil("could not determine")).toBe(false);
+  });
+});
+
+describe("classifyAmount — a genuine nil is GREEN, not neutral", () => {
+  it("greens an explicit nil/none finding (the client's zero-should-be-green fix)", () => {
+    expect(classifyAmount("A5-01", "No related party transactions (FY2025-26)", null, SCALE)?.flag).toBe("GREEN");
+    expect(classifyAmount("A7a-06", "Nil corporate guarantees given", null, SCALE)?.flag).toBe("GREEN");
+    expect(classifyAmount("A5-03", "No loans or advances to group companies", null, SCALE)?.flag).toBe("GREEN");
+  });
+  it("still neutrals a true data gap (no nil language, no amount)", () => {
+    expect(classifyAmount("A7a-06", "Amount not disclosed in the filings", null, SCALE)?.flag).toBe("NEUTRAL");
+  });
+});
+
+describe("auditOpinionFlag (A4-05) — a clean report defaults to GREEN", () => {
+  it("greens when audit evidence shows no modification (no explicit 'unmodified' keyword needed)", () => {
+    expect(
+      auditOpinionFlag("The auditor issued their report on the financial statements with no qualification.", null).flag,
+    ).toBe("GREEN");
   });
 });
 

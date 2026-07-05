@@ -349,7 +349,14 @@ const RATIONALE_INSTRUCTION =
   `finding). Do NOT declare green/red/pass/fail.\n` +
   `FRESHNESS: use the MOST RECENT fiscal year present in the excerpts; if several ` +
   `years appear, prefer the latest and IGNORE older ones. State which fiscal year ` +
-  `the figures are for (e.g. "(FY2025-26)").\n`;
+  `the figures are for (e.g. "(FY2025-26)").\n` +
+  `NIL IS A REAL ANSWER: if the item's figure/exposure is genuinely ZERO — the ` +
+  `company reports none, or the line item is absent because there is nothing to ` +
+  `report (no related-party transactions, no contingent liabilities, no goodwill, ` +
+  `no promoter pledge, no group loans, etc.) — then set "value" to "Nil" or "₹0" ` +
+  `EXPLICITLY. A true zero is a concrete favourable finding; do NOT report it as ` +
+  `"not available". Reserve "not available" for when the figure genuinely can't be ` +
+  `determined from the excerpts.\n`;
 
 const LARGE_PASSAGE_CHARS = 12_000;
 

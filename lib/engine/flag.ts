@@ -54,10 +54,17 @@ function judgePrompt(item: EngineItem, analysis: Analysis): string {
     `RED if it matches the red description, otherwise NEUTRAL. Base the decision ONLY ` +
     `on the finding/evidence above. Use ONLY evidence of the type this item asks about — ` +
     `if the finding is actually about a DIFFERENT concept (e.g. goodwill is not a ` +
-    `contingent liability; a revenue figure is not remuneration), choose NEUTRAL. ` +
-    `If it is ambiguous or unsupported, choose NEUTRAL. For "reason", give ONE or TWO ` +
-    `sentences an analyst would sign off on: name the SPECIFIC number or threshold that ` +
-    `drives the call and the governance implication — do NOT merely restate the rule.`
+    `contingent liability; a revenue figure is not remuneration), choose NEUTRAL.\n` +
+    `IMPORTANT — follow the descriptions, don't hedge: if the finding SATISFIES the ` +
+    `green description (including a nil / zero / "none" / clean / compliant / ` +
+    `within-limit outcome), you MUST return GREEN. Do NOT downgrade a genuinely ` +
+    `favourable or compliant finding to NEUTRAL just because a precise number is ` +
+    `absent, the disclosure is brief, or you couldn't independently verify it — a ` +
+    `reported zero or a clean disclosure IS the green condition. Likewise return RED ` +
+    `when it genuinely matches the red description. Use NEUTRAL only for genuinely ` +
+    `mixed or ambiguous cases. For "reason", give ONE or TWO sentences an analyst ` +
+    `would sign off on: name the SPECIFIC number or threshold that drives the call ` +
+    `and the governance implication — do NOT merely restate the rule.`
   );
 }
 
