@@ -11,7 +11,7 @@ export const STALE_AFTER_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Total checklist items — fallback when a run hasn't recorded itemsTotal yet. */
-export const CHECKLIST_TOTAL = 106;
+export const CHECKLIST_TOTAL = 103;
 
 /** True when there is no run, or the last run is older than STALE_AFTER_DAYS. */
 export function isStale(lastProcessedAt: string | Date | null | undefined, now: Date): boolean {

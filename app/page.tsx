@@ -9,8 +9,8 @@ export default async function Home() {
   let dbError = false;
   try {
     // Only surface complete, high-coverage runs: DONE and with MORE THAN 85 of
-    // the 106 items actually answered (green/red/neutral, not blanks). This hides
-    // thin/half-filled companies (e.g. 34/106, 51/106) that read as low quality.
+    // the ~103 items actually answered (green/red/neutral, not blanks). This hides
+    // thin/half-filled companies (e.g. 34/103, 51/103) that read as low quality.
     cards = (await listCompanyCards()).filter((c) => c.status === "DONE" && c.answered > 85);
   } catch {
     dbError = true;
@@ -27,7 +27,7 @@ export default async function Home() {
           Governance reports for Indian listed companies
         </h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-slate-600">
-          ~106 checklist items per company, each a clear{" "}
+          ~100 checklist items per company, each a clear{" "}
           <span className="font-semibold text-emerald-600">green</span> /{" "}
           <span className="font-semibold text-rose-600">red</span> /{" "}
           <span className="font-semibold text-amber-600">neutral</span> flag with a verdict, evidence and source.{" "}

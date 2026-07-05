@@ -529,39 +529,6 @@
           "source_hint": "",
           "is_non_negotiable": false,
           "threshold_logic": ""
-        },
-        {
-          "id": "A7-03",
-          "item": "Segment granularity",
-          "description": "Segment transparency",
-          "output_format": "Yes/No",
-          "green_flag": "Granular per Ind AS 108",
-          "red_flag": "Single-segment masking",
-          "source_hint": "",
-          "is_non_negotiable": false,
-          "threshold_logic": ""
-        },
-        {
-          "id": "A7-04",
-          "item": "Concall candor & guidance",
-          "description": "Engagement & honesty",
-          "output_format": "Text",
-          "green_flag": "Regular, transparent, hits guidance",
-          "red_flag": "No calls / evasive / misses",
-          "source_hint": "",
-          "is_non_negotiable": false,
-          "threshold_logic": ""
-        },
-        {
-          "id": "A7-05",
-          "item": "MD&A consistency",
-          "description": "Narrative stability",
-          "output_format": "Text",
-          "green_flag": "Consistent, balanced",
-          "red_flag": "Shifting / promotional",
-          "source_hint": "",
-          "is_non_negotiable": false,
-          "threshold_logic": ""
         }
       ]
     },

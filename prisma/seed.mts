@@ -75,6 +75,24 @@ async function main() {
     }
   }
 
+  // Prune items that are no longer in checklist.json (e.g. A7-03/04/05 were
+  // removed — guidance/reporting moved to a separate dashboard). Delete their
+  // ItemResults first (FK), then the items. Guarded: only prune when the JSON
+  // parsed to a sane number of items, so a bad/partial load never wipes the set.
+  const keepIds = new Set(data.sections.flatMap((s) => s.items.map((it) => it.id)));
+  if (keepIds.size >= 50) {
+    const stale = await prisma.checklistItem.findMany({
+      where: { id: { notIn: [...keepIds] } },
+      select: { id: true },
+    });
+    if (stale.length) {
+      const staleIds = stale.map((s) => s.id);
+      await prisma.itemResult.deleteMany({ where: { itemId: { in: staleIds } } });
+      await prisma.checklistItem.deleteMany({ where: { id: { in: staleIds } } });
+      console.log(`Pruned ${stale.length} removed item(s): ${staleIds.join(", ")}`);
+    }
+  }
+
   console.log(`Seeded ${sections} sections and ${items} items.`);
 }
 

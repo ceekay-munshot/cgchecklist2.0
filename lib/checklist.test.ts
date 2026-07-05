@@ -49,9 +49,9 @@ const checklistPresent = fs.existsSync(
 );
 
 describe.skipIf(!checklistPresent)("checklist data (requires data/checklist.json)", () => {
-  it("loads 106 items across 16 sections", () => {
+  it("loads 103 items across 16 sections", () => {
     expect(getSections().length).toBe(16);
-    expect(getItems().length).toBe(106);
+    expect(getItems().length).toBe(103);
   });
 
   it("has unique item ids", () => {
