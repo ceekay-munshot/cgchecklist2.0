@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { memo, useDeferredValue, useMemo, useState } from "react";
-import type { CompanyReport, FlagName, ReportItem, ReportSection } from "@/lib/report";
+import type { CompanyReport, FlagName, ReportDoc, ReportItem, ReportSection } from "@/lib/report";
 import { useAnalyzeRun } from "@/app/components/AnalyzeRun";
 
 type FilterKey = "ALL" | FlagName;
@@ -147,6 +147,9 @@ export function ReportView({ report }: { report: CompanyReport }) {
         </div>
       </div>
 
+      {/* Documents the analysis had access to */}
+      <DocumentsPanel docs={report.documents} />
+
       {/* Sections */}
       <div className="mt-6 space-y-5">
         {sections.length === 0 ? (
@@ -190,7 +193,70 @@ function SectionCard({ section }: { section: ReportSection }) {
           <ItemRow key={it.id} it={it} />
         ))}
       </ul>
+      <SectionSources items={section.items} />
     </section>
+  );
+}
+
+/** Distinct source documents used to answer this section's items. */
+function SectionSources({ items }: { items: ReportItem[] }) {
+  const docs = Array.from(new Set(items.map((i) => i.source.doc).filter((d): d is string => !!d)));
+  if (docs.length === 0) return null;
+  return (
+    <div className="border-t border-slate-100 bg-slate-50/40 px-5 py-2.5 text-[11px] leading-relaxed">
+      <span className="font-semibold uppercase tracking-wide text-slate-400">Sources · </span>
+      <span className="text-slate-500">{docs.join("  ·  ")}</span>
+    </div>
+  );
+}
+
+function docTypeLabel(type: string): string {
+  switch (type) {
+    case "ANNUAL_REPORT":
+      return "Annual report";
+    case "EARNINGS_PDF":
+      return "Concall";
+    case "SCREENER_PAGE":
+      return "Screener";
+    case "ANNOUNCEMENT":
+      return "Filing";
+    default:
+      return type.replace(/_/g, " ").toLowerCase();
+  }
+}
+
+/** Collapsible list of the documents this run harvested + read from. */
+function DocumentsPanel({ docs }: { docs: ReportDoc[] }) {
+  if (!docs.length) return null;
+  return (
+    <details className="group mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-3.5">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-700">
+        <span>
+          Documents referenced <span className="text-slate-400">· {docs.length}</span>
+        </span>
+        <span className="text-xs font-medium text-indigo-500">
+          <span className="group-open:hidden">show</span>
+          <span className="hidden group-open:inline">hide</span>
+        </span>
+      </summary>
+      <ul className="mt-3 grid grid-cols-1 gap-1.5 border-t border-slate-100 pt-3 sm:grid-cols-2">
+        {docs.map((d, i) => (
+          <li key={`${d.name}-${i}`} className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              {docTypeLabel(d.type)}
+            </span>
+            {d.url ? (
+              <a href={d.url} target="_blank" rel="noreferrer" className="truncate text-indigo-500 transition hover:text-indigo-700">
+                {d.name}
+              </a>
+            ) : (
+              <span className="truncate">{d.name}</span>
+            )}
+            {d.pages != null && <span className="ml-auto shrink-0 text-slate-300">{d.pages}p</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

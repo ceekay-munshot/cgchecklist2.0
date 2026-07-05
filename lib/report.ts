@@ -27,7 +27,15 @@ export interface ReportItem {
   isNonNegotiable: boolean;
   needsReview: boolean;
   evidenceQuote: string | null;
-  source: { page: number | null; url: string | null };
+  source: { page: number | null; url: string | null; doc: string | null };
+}
+
+/** A harvested document the run had access to (for the report's source list). */
+export interface ReportDoc {
+  name: string;
+  type: string;
+  url: string | null;
+  pages: number | null;
 }
 
 export interface ReportSection {
@@ -48,6 +56,8 @@ export interface CompanyReport {
   lastProcessedAt: string | null;
   summary: RunSummary | null;
   sections: ReportSection[];
+  /** Documents the run harvested + read from (source transparency). */
+  documents: ReportDoc[];
   /** convenience rollup for headers/cards */
   answered: number; // green + red + neutral
   total: number;
@@ -104,12 +114,18 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
   }
   if (!run) return null;
 
-  const [items, sections, results] = await Promise.all([
+  const [items, sections, results, docs] = await Promise.all([
     prisma.checklistItem.findMany({ orderBy: [{ sectionCode: "asc" }, { orderIndex: "asc" }] }),
     prisma.checklistSection.findMany({ orderBy: { orderIndex: "asc" } }),
     prisma.itemResult.findMany({ where: { runId: run.id } }),
+    prisma.sourceDoc.findMany({
+      where: { runId: run.id },
+      select: { id: true, name: true, type: true, sourceUrl: true, pages: true },
+      orderBy: [{ type: "asc" }, { name: "asc" }],
+    }),
   ]);
   const byId = new Map(results.map((r) => [r.itemId, r]));
+  const docById = new Map(docs.map((d) => [d.id, d]));
 
   const reportSections: ReportSection[] = sections.map((s) => {
     const secItems: ReportItem[] = items
@@ -133,7 +149,11 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
           isNonNegotiable: r?.isNonNegotiable ?? it.isNonNegotiable,
           needsReview: r?.status === "NEEDS_REVIEW",
           evidenceQuote: r?.evidenceQuote ?? null,
-          source: { page: r?.sourcePage ?? null, url: r?.sourceUrl ?? null },
+          source: {
+            page: r?.sourcePage ?? null,
+            url: r?.sourceUrl ?? null,
+            doc: (r?.sourceDocId ? docById.get(r.sourceDocId)?.name : null) ?? null,
+          },
         };
       });
     return { code: s.code, name: s.name, items: secItems, counts: countItems(secItems) };
@@ -162,6 +182,7 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
     lastProcessedAt: run.lastProcessedAt?.toISOString() ?? null,
     summary,
     sections: reportSections,
+    documents: docs.map((d) => ({ name: d.name, type: d.type, url: d.sourceUrl || null, pages: d.pages ?? null })),
     answered,
     total: allItems.length,
   };

@@ -36,6 +36,12 @@ const FLAG_META: Record<FlagName | "NONE", { label: string; emoji: string; fill:
 };
 const flagMeta = (it: ReportItem) => FLAG_META[(it.flag ?? "NONE") as FlagName | "NONE"];
 
+/** Confidence as a plain word (client asked for Low/Medium/High, not %). */
+function confLabel(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return v >= 0.8 ? "High" : v >= 0.45 ? "Medium" : "Low";
+}
+
 const thin = { style: "thin" as const, color: { argb: C.line } };
 const ALL_BORDERS = { top: thin, left: thin, bottom: thin, right: thin };
 const box = (cell: ExcelJS.Cell) => (cell.border = ALL_BORDERS);
@@ -144,8 +150,8 @@ function checklistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
     { key: "flag", width: 14 },
     { key: "value", width: 34 },
     { key: "verdict", width: 52 },
-    { key: "conf", width: 8 },
-    { key: "source", width: 14 },
+    { key: "conf", width: 10 },
+    { key: "source", width: 30 },
   ];
 
   // header row
@@ -184,17 +190,25 @@ function checklistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
       rowObj.getCell(3).value = m.label;
       rowObj.getCell(4).value = it.value && it.value.toLowerCase() !== "not available" ? it.value : "—";
       rowObj.getCell(5).value = it.verdict ?? "—";
-      rowObj.getCell(6).value = it.confidence != null ? `${Math.round(it.confidence * 100)}%` : "—";
+      rowObj.getCell(6).value = confLabel(it.confidence);
+      // Source = document name + page (hyperlinked when we have a URL).
+      const srcText = it.source.doc
+        ? `${it.source.doc}${it.source.page != null ? ` · p.${it.source.page}` : ""}`
+        : it.source.page != null
+          ? `p.${it.source.page}`
+          : "—";
+      const src = rowObj.getCell(7);
       if (it.source.url) {
-        const src = rowObj.getCell(7);
-        src.value = { text: "open ↗", hyperlink: it.source.url } as ExcelJS.CellHyperlinkValue;
+        src.value = { text: srcText === "—" ? "open ↗" : srcText, hyperlink: it.source.url } as ExcelJS.CellHyperlinkValue;
         src.font = { color: { argb: "FF2563EB" }, underline: true };
+      } else {
+        src.value = srcText;
       }
 
       for (let cc = 1; cc <= NCOLS; cc++) {
         const cell = rowObj.getCell(cc);
         box(cell);
-        const wrap = cc === 2 || cc === 4 || cc === 5;
+        const wrap = cc === 2 || cc === 4 || cc === 5 || cc === 7;
         cell.alignment = { vertical: "top", wrapText: wrap, horizontal: cc === 3 || cc === 6 ? "center" : "left", indent: wrap || cc === 1 ? 1 : 0 };
         if (idx % 2 === 1 && cc !== 3) cell.fill = solid(C.zebra);
       }
