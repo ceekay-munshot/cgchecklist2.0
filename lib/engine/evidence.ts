@@ -202,12 +202,19 @@ export const WEB_ONLY_ITEMS: Record<string, string> = {
   "A15-03": "analyst research coverage brokerages",
   "A3-07": "marquee institutional investor stake entry exit",
   "A9-01": "SEBI order penalty consent order insider trading",
+  // Audit-firm calibre: the statutory auditor's name is in the filing, but its
+  // STANDING (Big-4 / top-national vs small local firm) isn't — so research the
+  // firm's reputation on the web, then fall back to the filing for the name.
+  "A4-02": "statutory auditor audit firm name reputation Big Four top national vs small local firm standing",
   // Promoter / management quality (A13) and reputation (A9-04) live in news and
   // market data, not in the annual report — they get a tailored web query and an
   // EXPECTED-NA label when web research is unavailable (no search key) or empty.
   "A9-04": "promoter group track record other listed companies governance record",
   "A13-01": "CEO professional management versus promoter-run company",
-  "A13-03": "promoter founding history vintage involvement in the company",
+  // Look BEYOND the current company: the promoter's earlier ventures / other
+  // businesses and how they fared (incl. failures / wound-up companies), not just
+  // this company's listing history.
+  "A13-03": "promoter founder background history vintage earlier ventures other businesses track record beyond this company including any failed or wound-up companies",
   "A13-04": "senior management leadership team tenure experience",
   "A13-05": "second line management bench strength key executives",
   "A13-06": "promoter family dispute succession feud shareholding",
