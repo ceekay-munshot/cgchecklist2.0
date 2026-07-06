@@ -134,6 +134,8 @@ export interface Evidence {
   passages?: EvidencePassage[];
   /** The primary citation to attach to the result. */
   citation?: EvidenceCitation;
+  /** Subject company name — anchors the extractor so it can't drift to a namesake. */
+  companyName?: string;
   note?: string;
 }
 

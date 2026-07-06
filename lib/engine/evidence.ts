@@ -398,6 +398,18 @@ export function evidenceStrategyFor(item: EngineItem): EvidenceStrategy {
 // ---------------------------------------------------------------------------
 
 export async function getEvidence(item: EngineItem, runId: string): Promise<Evidence> {
+  const ev = await getEvidenceInner(item, runId);
+  // Anchor the extractor to the subject company so it can't drift to a namesake
+  // (a real failure mode: "Nora Enterprises" → "De Nora India"; "Trent" → "Severn
+  // Trent"). Attached on every path; the analyzer refuses evidence about anyone else.
+  if (ev.companyName == null) {
+    const c = await loadCompany(runId);
+    if (c?.name) ev.companyName = c.name;
+  }
+  return ev;
+}
+
+async function getEvidenceInner(item: EngineItem, runId: string): Promise<Evidence> {
   const kind = kindOf(item);
   const strategy = evidenceStrategyFor(item);
 

@@ -150,6 +150,24 @@ describe("analyzeItem", () => {
     expect(a.citation?.page).toBe(120);
   });
 
+  it("anchors the extractor to the subject company + forbids importing other companies", async () => {
+    // The anti-hallucination fix: a private company ("Nora Enterprises") must not be
+    // answered with facts about a same-named listed company or invented peers.
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ relevant: true, found: true, value: "Nil" });
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "QUALITATIVE",
+      companyName: "Nora Enterprises",
+      passages: [{ text: "some governance text", citation: { sourceUrl: "x" } }],
+    };
+    await analyzeItem(item({ id: "A1-05", outputFormat: "Text" }), ev);
+    const prompt = asMock(llm.reasoning.completeJSON).mock.calls[0][0].prompt as string;
+    expect(prompt).toContain("Nora Enterprises");
+    expect(prompt).toMatch(/GROUNDING/);
+    expect(prompt).toMatch(/other\s+company/i);
+  });
+
   it("RELEVANCE GATE: returns 'not available' for an off-topic passage instead of judging it", async () => {
     // The model decides the excerpt isn't actually about this item (shares a word only).
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({

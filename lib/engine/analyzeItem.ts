@@ -632,6 +632,12 @@ const RATIONALE_INSTRUCTION =
   `Stay STRICTLY grounded in the excerpts — no speculation, no invented numbers; if a ` +
   `needed detail isn't disclosed, SAY SO plainly (a disclosure gap is itself a ` +
   `finding). Do NOT declare green/red/pass/fail.\n` +
+  `GROUNDING (critical): write ONLY about the company named above, using ONLY facts ` +
+  `that appear in the excerpts. Do NOT name, compare to, or import facts about any ` +
+  `OTHER company (no invented "peers", no directors/auditors/figures from your own ` +
+  `training knowledge). You MAY name a subsidiary/parent/related party that the ` +
+  `excerpts themselves mention. If the excerpts are actually about a DIFFERENT, ` +
+  `similarly-named company, do not answer from them.\n` +
   `FRESHNESS: use the MOST RECENT fiscal year present in the excerpts; if several ` +
   `years appear, prefer the latest and IGNORE older ones. State which fiscal year ` +
   `the figures are for (e.g. "(FY2025-26)").\n` +
@@ -652,14 +658,19 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   const totalChars = passages.reduce((n, p) => n + p.text.length, 0);
   const role = totalChars > LARGE_PASSAGE_CHARS ? "longContext" : "reasoning";
 
+  const subject = evidence.companyName ? `Company under review: ${evidence.companyName}\n` : "";
   const prompt =
+    subject +
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
-    `\nRELEVANCE GATE — set "relevant" to false ONLY if these excerpts are about a ` +
+    `\nRELEVANCE GATE — set "relevant" to false if EITHER: (a) these excerpts are about a ` +
     `CLEARLY DIFFERENT subject than this item (e.g. a revenue line for a contingent-` +
-    `liability item, or a CSR officer for "family disputes"). Sharing some general ` +
-    `topic counts as relevant. When in doubt, treat it as RELEVANT — do not reject ` +
-    `merely because the passage is brief or indirect.\n` +
+    `liability item), OR (b) they are about a DIFFERENT company than the one under ` +
+    `review (a same/similar-named entity) rather than this company or its own named ` +
+    `group. Do NOT answer a private company's item using facts about a same-named ` +
+    `LISTED company from your knowledge. Otherwise, sharing the general topic counts ` +
+    `as relevant — when in doubt on topic (not company), treat it as RELEVANT; do not ` +
+    `reject merely because the passage is brief or indirect.\n` +
     `If relevant, answer for this item. ${RATIONALE_INSTRUCTION}` +
     `If the excerpts genuinely don't answer it, set "found" to false. Set "confident" ` +
     `to false when the passage is on-topic but thin (we keep a low-confidence verdict ` +
@@ -710,6 +721,7 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
   const prompt =
     `You are reading the "${noteNameFor(item)}" note from an annual report. PDF tables ` +
     `are often flattened into messy text — reconstruct the figures carefully.\n` +
+    (evidence.companyName ? `Company under review: ${evidence.companyName}\n` : "") +
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
     `\nExtract ONLY the figure(s) for THIS SPECIFIC item (per its title above) — in Rs crore, ` +
