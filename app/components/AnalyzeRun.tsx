@@ -23,6 +23,13 @@ interface StartResponse {
   dispatchError?: string;
 }
 
+export interface RunDoc {
+  name: string;
+  type: string;
+  pages: number | null;
+  ok: boolean;
+}
+
 export interface StatusResponse {
   phase: "queued" | "harvesting" | "processing" | "partial" | "done" | "error" | "none";
   percent: number;
@@ -30,6 +37,22 @@ export interface StatusResponse {
   emoji?: string;
   ready: boolean;
   done: boolean;
+  documents?: RunDoc[];
+}
+
+function docTypeLabel(type: string): string {
+  switch (type) {
+    case "ANNUAL_REPORT":
+      return "Annual report";
+    case "EARNINGS_PDF":
+      return "Concall";
+    case "ANNOUNCEMENT":
+      return "Filing";
+    case "WEB":
+      return "Web";
+    default:
+      return type.replace(/_/g, " ").toLowerCase();
+  }
 }
 
 const POLL_MS = 2500;
@@ -206,7 +229,7 @@ function LoadingModal({
         role="dialog"
         aria-modal="true"
         aria-label="Analysing company"
-        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.18)] ring-1 ring-black/5 sm:p-6"
+        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.18)] ring-1 ring-black/5 sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
@@ -264,6 +287,26 @@ function LoadingModal({
             );
           })}
         </ul>
+
+        {/* Documents the analysis is running on — appears as they're gathered. */}
+        {progress.documents && progress.documents.length > 0 && (
+          <div className="mt-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6f7d97]">
+              Documents · {progress.documents.length}
+            </p>
+            <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto pr-1">
+              {progress.documents.map((d, i) => (
+                <li key={`${d.name}-${i}`} className="flex items-center gap-2 text-[12px] text-[#525f78]">
+                  <span className="shrink-0 rounded bg-[#eef2f8] px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-[#6f7d97]">
+                    {docTypeLabel(d.type)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                  {d.pages != null && <span className="shrink-0 tabular-nums text-[#9aa6bd]">{d.pages}p</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* dispatch failure diagnostic (kept) */}
         {!dispatched && (
