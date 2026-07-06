@@ -41,6 +41,13 @@ export function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: Flag
       : "Not available — no supporting evidence found.";
   }
   const reason = (flagRes.reason ?? "").trim();
+  // A deterministic amount-sanity override (an implausibly large / distrusted /
+  // downgraded figure) must LEAD the verdict — otherwise we'd parrot the LLM
+  // rationale that quoted the misread number (e.g. "₹2,049cr RPTs" when revenue is
+  // ₹59cr). The clean deterministic reason is the honest answer.
+  if (reason && /implausibly large|extraction distrusted|likely a misread|downgraded from/i.test(reason)) {
+    return reason.slice(0, 700);
+  }
   const rationale = analysis.rationale?.trim();
   if (rationale) {
     const withReason =

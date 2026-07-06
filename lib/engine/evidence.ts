@@ -431,6 +431,13 @@ async function getEvidenceInner(item: EngineItem, runId: string): Promise<Eviden
   // of directors") would otherwise pre-empt the web and yield a NA — so search
   // the WEB FIRST, then fall back to the document, then an honest Expected-NA.
   if (strategy.expectedNa && strategy.webFallback) {
+    // For a PRIVATE company the uploaded due-diligence report / financials are
+    // authoritative and the web is mostly namesake noise — read the documents FIRST
+    // so a stray web hit about a same-named public company can't pre-empt them.
+    if (await isUnlistedRun(runId)) {
+      const docFirst = await getDocumentEvidence(runId, strategy, kind);
+      if (docFirst.status === "found") return docFirst;
+    }
     const company = await loadCompany(runId);
     const web = await getWebEvidence(item, company, strategy, kind);
     if (web.status === "found") return web;
@@ -590,8 +597,18 @@ async function getDocumentEvidence(
   strategy: EvidenceStrategy,
   kind: ItemKind,
 ): Promise<Evidence> {
+  // Unlisted runs carry a small, hand-uploaded doc set (financial statements + a
+  // due-diligence report + a deck), ALL stored under one type. Don't let a
+  // strategy's docType filter hide a relevant upload — search every uploaded doc so
+  // items get fed the FADD/FS content instead of falling to a false NA.
+  const unlisted = await isUnlistedRun(runId);
   const docs = await prisma.sourceDoc.findMany({
-    where: { runId, type: { in: strategy.docTypes ?? [] }, fetchStatus: "OK", extractedText: { not: null } },
+    where: {
+      runId,
+      fetchStatus: "OK",
+      extractedText: { not: null },
+      ...(unlisted ? { type: { not: "SCREENER_PAGE" } } : { type: { in: strategy.docTypes ?? [] } }),
+    },
     orderBy: { createdAt: "asc" }, // harvester stores most-recent first
   });
   if (!docs.length) {

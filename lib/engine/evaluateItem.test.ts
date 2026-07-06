@@ -12,11 +12,11 @@ vi.mock("./evidence", () => ({
 vi.mock("./analyzeItem", () => ({ analyzeItem: vi.fn() }));
 vi.mock("./flag", () => ({ assignFlag: vi.fn() }));
 
-import { evaluateItem } from "./evaluateItem";
+import { evaluateItem, buildVerdict } from "./evaluateItem";
 import { getEvidence, isUnlistedRun } from "./evidence";
 import { analyzeItem } from "./analyzeItem";
 import { assignFlag } from "./flag";
-import type { EngineItem } from "./types";
+import type { Analysis, EngineItem, FlagResult } from "./types";
 
 const asMock = (fn: unknown) => fn as unknown as Mock;
 
@@ -70,5 +70,23 @@ describe("evaluateItem — unlisted applicability gate", () => {
     await evaluateItem(item("A15-03"), "run1");
 
     expect(asMock(getEvidence)).toHaveBeenCalledTimes(1); // normal evaluation
+  });
+});
+
+describe("buildVerdict — amount-distrust override", () => {
+  const it2 = item("A5-04");
+  it("leads with the clean deterministic reason, not the LLM's misread figure", () => {
+    const analysis = {
+      value: "₹2,049.55 crore promoter-vendor transactions",
+      rationale: "In FY2025-26, sales to Vendolite amounted to ₹2,049.55 crore, a significant related-party exposure.",
+      confidence: "medium",
+    } as Analysis;
+    const flagRes = {
+      flag: "NEUTRAL",
+      reason: "₹2,050cr is implausibly large vs revenue — extraction distrusted (likely a misread); not flagged.",
+    } as FlagResult;
+    const v = buildVerdict(it2, analysis, flagRes);
+    expect(v).toMatch(/implausibly large/);
+    expect(v).not.toMatch(/2,049\.55 crore/); // the bogus figure is suppressed
   });
 });
