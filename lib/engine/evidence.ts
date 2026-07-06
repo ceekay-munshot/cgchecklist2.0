@@ -134,6 +134,26 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
   // (A9-05 rating actions intentionally NOT routed to the harvested ICRA doc —
   // that rationale lists OTHER companies and produced a false red; honest NA
   // until a TCS-specific rating source is harvested.)
+  // Overboarding — the "directorships in other companies" table IS in the
+  // corporate-governance report (SEBI-mandated). Read it there (per-director
+  // extractor), web only as enrichment/fallback.
+  "A1-06": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: [
+      "directorships in other companies",
+      "number of directorships",
+      "other directorships",
+      "directorship in other listed",
+      "directorships held in other",
+      "composition of the board",
+      "board of directors",
+    ],
+    keywords: ["directorship", "other companies", "committee membership", "other listed entities", "director", "chairperson"],
+    useGeminiNote: true,
+    webFallback: true,
+    webQuery: "directors number of other listed company board seats overboarding",
+  },
   // Board-meeting attendance IS disclosed in the corporate-governance report's
   // attendance table (not the web) — read it there first, web only as a fallback.
   "A1-07": {
@@ -226,7 +246,6 @@ const SECTION_PROFILE: Record<
  * silent retrieval failure.
  */
 export const WEB_ONLY_ITEMS: Record<string, string> = {
-  "A1-06": "directors number of other listed company board seats overboarding",
   "A12-01": "employee attrition rate",
   "A15-03": "analyst research coverage brokerages",
   "A3-07": "marquee institutional investor stake entry exit",

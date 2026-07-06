@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { isCommitted, summarize } from "@/lib/orchestrate";
 import type { RunSummary } from "@/lib/orchestrate";
+import { parseTable, type DataTable } from "@/lib/engine/types";
 
 /**
  * Read models for the report UI + exporters. One place loads a company's latest
@@ -27,6 +28,8 @@ export interface ReportItem {
   isNonNegotiable: boolean;
   needsReview: boolean;
   evidenceQuote: string | null;
+  /** Structured breakdown (e.g. per-director overboarding), when present. */
+  table: DataTable | null;
   source: { page: number | null; url: string | null; doc: string | null };
 }
 
@@ -148,7 +151,9 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
           provider: r?.providerUsed ?? null,
           isNonNegotiable: r?.isNonNegotiable ?? it.isNonNegotiable,
           needsReview: r?.status === "NEEDS_REVIEW",
-          evidenceQuote: r?.evidenceQuote ?? null,
+          // A structured table rides in evidenceQuote behind a marker — split it out.
+          table: parseTable(r?.evidenceQuote),
+          evidenceQuote: parseTable(r?.evidenceQuote) ? null : (r?.evidenceQuote ?? null),
           source: {
             page: r?.sourcePage ?? null,
             url: r?.sourceUrl ?? null,

@@ -4,6 +4,7 @@ import { parseNumericValue } from "./thresholds";
 import {
   NOT_AVAILABLE,
   type Analysis,
+  type DataTable,
   type EngineItem,
   type Evidence,
   type EvidenceCitation,
@@ -106,6 +107,11 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   }
   // Audit-committee composition lives in a governance-report table; extract the
   // quantified facts (independent/total members, meetings) so the deterministic
+  // A1-06 Overboarding — build a per-director table from the governance report's
+  // "directorships in other companies" disclosure (SEBI-mandated).
+  if (item.id === "A1-06") {
+    return analyzeDirectors(item, evidence);
+  }
   // A2-01 categorical rule can decide compliance instead of returning NA.
   if (item.id === "A2-01") {
     return analyzeAuditCommittee(item, evidence);
@@ -296,6 +302,100 @@ async function analyzeAuditCommittee(item: EngineItem, evidence: Evidence): Prom
     evidenceQuote: data.evidenceQuote,
     citation: citationForPage(evidence, data.page),
     confidence: parts.length ? "high" : "low",
+    providerUsed: provider,
+  };
+}
+
+// ---- per-director table (A1-06 Overboarding; structured extraction) ----
+
+interface DirectorRow {
+  name: string;
+  otherBoards?: number | null;
+}
+interface DirectorsExtract {
+  found: boolean;
+  directors?: DirectorRow[];
+}
+
+const DIRECTORS_SCHEMA = {
+  type: "object",
+  properties: {
+    found: { type: "boolean" },
+    directors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          otherBoards: { type: ["integer", "null"] },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["found"],
+  additionalProperties: false,
+} as const;
+
+// SEBI caps a person at 7 listed boards (and audit/SRC memberships separately);
+// the checklist green band is "<=7 listed boards".
+const OVERBOARD_LIMIT = 7;
+
+async function analyzeDirectors(item: EngineItem, evidence: Evidence): Promise<Analysis> {
+  const passages = evidence.passages ?? [];
+  if (!passages.length) return NA;
+
+  const prompt =
+    `You are reading a company's Corporate Governance report from its annual report.\n` +
+    `List EVERY director on the board and, for each, the NUMBER OF OTHER company directorships ` +
+    `they hold — from the "Directorships in other companies" / "No. of other directorships" / ` +
+    `"Directorship in other listed entities" disclosure (SEBI mandates this table). Prefer the ` +
+    `count of OTHER LISTED-company boards; if only a total is given, use that. Return one row per ` +
+    `director with their "name" and "otherBoards" (an integer, or null if not stated). Use the ` +
+    `MOST RECENT year. If you genuinely cannot find any director-wise directorship data, set ` +
+    `"found" to false.\n\n` +
+    passagesBlock(passages);
+
+  const res = await extract<DirectorsExtract>("longContext", { prompt, temperature: 0 }, DIRECTORS_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
+  const directors = (data.directors ?? []).filter((d) => d.name && d.name.trim());
+  if (!data.found || directors.length === 0) return NA;
+
+  // Busiest director first so the concern reads at the top of the table.
+  const sorted = [...directors].sort((a, b) => (b.otherBoards ?? -1) - (a.otherBoards ?? -1));
+  const counts = sorted.map((d) => d.otherBoards).filter((n): n is number => n != null);
+  const maxBoards = counts.length ? Math.max(...counts) : null;
+  const over = sorted.filter((d) => d.otherBoards != null && d.otherBoards > OVERBOARD_LIMIT);
+
+  // value LEADS with maxBoards so the numeric flag rule reads it (≤7 green / >7 red).
+  const value =
+    maxBoards != null
+      ? `${maxBoards} other directorships on the busiest director — ${over.length} of ${sorted.length} directors above ${OVERBOARD_LIMIT}`
+      : `Board of ${sorted.length} directors; other-directorship counts not quantified`;
+  const rationale =
+    maxBoards != null
+      ? `The board has ${sorted.length} directors. The busiest, ${sorted[0].name}, holds ${maxBoards} other directorships` +
+        (over.length
+          ? `; ${over.length} director(s) sit on more than ${OVERBOARD_LIMIT} boards (${over.map((d) => d.name).join(", ")}), which dilutes the attention each board receives.`
+          : `, and every director is within the ${OVERBOARD_LIMIT}-board norm — no overboarding concern.`)
+      : undefined;
+  const table: DataTable = {
+    columns: ["Director", "Other boards", "Status"],
+    rows: sorted.map((d) => [
+      d.name.trim(),
+      d.otherBoards != null ? String(d.otherBoards) : "—",
+      d.otherBoards != null && d.otherBoards > OVERBOARD_LIMIT ? "Overboarded" : "OK",
+    ]),
+  };
+
+  return {
+    value,
+    rationale,
+    table,
+    citation: citationForPage(evidence, null),
+    confidence: maxBoards != null ? "high" : "low",
     providerUsed: provider,
   };
 }

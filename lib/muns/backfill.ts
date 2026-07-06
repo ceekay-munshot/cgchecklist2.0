@@ -3,7 +3,7 @@ import { analyzeItem } from "@/lib/engine/analyzeItem";
 import { buildVerdict } from "@/lib/engine/evaluateItem";
 import { assignFlag } from "@/lib/engine/flag";
 import { loadCompanyScale } from "@/lib/engine/evidence";
-import { fromPrismaItem, kindOf, type Evidence } from "@/lib/engine/types";
+import { fromPrismaItem, kindOf, serializeTable, type Evidence } from "@/lib/engine/types";
 import { summarize } from "@/lib/orchestrate";
 import { runAllLanes, type LaneSection } from "./lanes";
 import { munsConfigured, munsEnv, defaultDateWindow, type MunsQueryContext } from "./client";
@@ -115,13 +115,14 @@ export async function munsBackfill(
       if (flagRes.flag === "NOT_AVAILABLE") continue;
 
       const verdict = buildVerdict(engineItem, analysis, flagRes);
+      const evidenceQuote = analysis.table ? serializeTable(analysis.table) : (analysis.evidenceQuote ?? null);
       const providers = ["muns", analysis.providerUsed].filter(Boolean).join("+");
       await persist(runId, it.id, {
         status: flagRes.needsReview ? "NEEDS_REVIEW" : "DONE",
         flag: flagRes.flag,
         verdict,
         value: (analysis.value ?? "").slice(0, 200),
-        evidenceQuote: analysis.evidenceQuote ?? null,
+        evidenceQuote,
         sourceUrl: null,
         confidence: CONFIDENCE_SCORE[analysis.confidence],
         isNonNegotiable: it.isNonNegotiable,

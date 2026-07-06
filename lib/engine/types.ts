@@ -141,6 +141,30 @@ export interface Evidence {
 // Analysis + flag
 // ---------------------------------------------------------------------------
 
+/** A small structured table for the report (e.g. a per-director breakdown). */
+export interface DataTable {
+  columns: string[];
+  rows: string[][];
+}
+
+// A structured table is persisted inside the existing (Text) evidenceQuote
+// column behind a marker — so no schema migration is needed. loadReport parses
+// it back out; a plain quote (no marker) is untouched.
+const TABLE_MARKER = "TBL1";
+export function serializeTable(t: DataTable): string {
+  return TABLE_MARKER + JSON.stringify({ columns: t.columns, rows: t.rows });
+}
+export function parseTable(s: string | null | undefined): DataTable | null {
+  if (!s || !s.startsWith(TABLE_MARKER)) return null;
+  try {
+    const t = JSON.parse(s.slice(TABLE_MARKER.length)) as DataTable;
+    if (Array.isArray(t?.columns) && Array.isArray(t?.rows)) return t;
+  } catch {
+    /* not a table — treat as a normal quote */
+  }
+  return null;
+}
+
 export interface Analysis {
   /** Concise fact, or the literal "not available". */
   value: string;
@@ -156,6 +180,12 @@ export interface Analysis {
    * Dividend Payout %), so the flag engine can judge the TREND deterministically.
    */
   series?: { periods: string[]; values: Array<string | null> };
+  /**
+   * A structured breakdown table for the report (e.g. the per-director
+   * overboarding / independence table). Rendered as a table; the flag is still
+   * decided from `value`.
+   */
+  table?: DataTable;
   evidenceQuote?: string;
   citation?: EvidenceCitation;
   confidence: Confidence;

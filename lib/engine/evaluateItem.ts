@@ -5,6 +5,7 @@ import { assignFlag } from "./flag";
 import { QuotaExhaustedError } from "./quota";
 import {
   kindOf,
+  serializeTable,
   type Analysis,
   type EngineItem,
   type FlagResult,
@@ -82,7 +83,9 @@ export async function evaluateItem(item: EngineItem, runId: string): Promise<Ite
       flag: flagRes.flag,
       verdict: buildVerdict(item, analysis, flagRes),
       value: analysis.value,
-      evidenceQuote: analysis.evidenceQuote,
+      // A structured breakdown table (per-director etc.) rides in evidenceQuote
+      // behind a marker — loadReport parses it back into a real table.
+      evidenceQuote: analysis.table ? serializeTable(analysis.table) : analysis.evidenceQuote,
       citation: analysis.citation ?? evidence.citation,
       confidence: analysis.confidence,
       isNonNegotiable: item.isNonNegotiable,

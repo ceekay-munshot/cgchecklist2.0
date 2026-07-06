@@ -317,6 +317,7 @@ const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
             “{it.evidenceQuote}”
           </p>
         )}
+        {it.table && it.table.rows.length > 0 && <BreakdownTable table={it.table} />}
         {whyOpen && <WhyPanel it={it} flag={f} />}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -383,6 +384,42 @@ function basisLabel(provider: string | null): string {
   if (p.includes("deterministic")) return "a deterministic rule (no AI)";
   if (p.includes("muns")) return "AI research over the web";
   return `AI reasoning over the filings`;
+}
+
+// A structured per-item breakdown (e.g. the per-director overboarding table).
+function BreakdownTable({ table }: { table: NonNullable<ReportItem["table"]> }) {
+  const cellClass = (cell: string, col: number) => {
+    const base = col === 0 ? "font-medium text-slate-700" : "text-slate-600";
+    if (cell === "Overboarded") return "font-semibold text-rose-600";
+    if (cell === "OK") return "font-medium text-emerald-600";
+    return base;
+  };
+  return (
+    <div className="mt-2.5 overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full min-w-[320px] border-collapse text-xs">
+        <thead>
+          <tr className="bg-slate-50/70">
+            {table.columns.map((c, i) => (
+              <th key={i} className="border-b border-slate-200 px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, ri) => (
+            <tr key={ri} className="even:bg-slate-50/40">
+              {row.map((cell, ci) => (
+                <td key={ci} className={`border-b border-slate-100 px-3 py-1.5 tabular-nums ${cellClass(cell, ci)}`}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function Confidence({ v }: { v: number | null }) {
