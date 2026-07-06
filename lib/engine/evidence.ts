@@ -127,6 +127,17 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
   // (A9-05 rating actions intentionally NOT routed to the harvested ICRA doc —
   // that rationale lists OTHER companies and produced a false red; honest NA
   // until a TCS-specific rating source is harvested.)
+  // Board-meeting attendance IS disclosed in the corporate-governance report's
+  // attendance table (not the web) — read it there first, web only as a fallback.
+  "A1-07": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["attendance of directors", "attendance at board meetings", "board meeting attendance", "number of board meetings and attendance", "attendance of each director", "director attendance record"],
+    keywords: ["attendance", "board meetings held", "meetings attended", "director", "last annual general meeting", "no. of board meetings"],
+    useGeminiNote: true,
+    webFallback: true,
+    webQuery: "board meeting attendance record of directors",
+  },
   // Audit-committee composition lives in a table in the corporate-governance
   // report — give it a large note window so the dedicated A2-01 extractor can
   // reconstruct independent/total members + meetings from the flattened table.
@@ -201,7 +212,6 @@ const SECTION_PROFILE: Record<
  */
 export const WEB_ONLY_ITEMS: Record<string, string> = {
   "A1-06": "directors number of other listed company board seats overboarding",
-  "A1-07": "board meeting attendance record of directors",
   "A12-01": "employee attrition rate",
   "A15-03": "analyst research coverage brokerages",
   "A3-07": "marquee institutional investor stake entry exit",

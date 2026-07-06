@@ -71,8 +71,8 @@ describe("evidenceStrategyFor — routing per item", () => {
     // a non-note document item is NOT flagged for Gemini note reading
     expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).useGeminiNote).toBeFalsy();
   });
-  it("marks web/market-data items (overboarding, attendance, attrition, …) as expected-NA with a web fallback", () => {
-    for (const id of ["A1-06", "A1-07", "A12-01", "A15-03", "A3-07", "A9-01"]) {
+  it("marks web/market-data items (overboarding, attrition, …) as expected-NA with a web fallback", () => {
+    for (const id of ["A1-06", "A12-01", "A15-03", "A3-07", "A9-01"]) {
       const s = evidenceStrategyFor(item({ id, outputFormat: "Count" }));
       expect(s.expectedNa).toBe(true);
       expect(s.webFallback).toBe(true);
@@ -80,6 +80,12 @@ describe("evidenceStrategyFor — routing per item", () => {
     }
     // a normal filing item is NOT marked expected-NA
     expect(evidenceStrategyFor(item({ id: "A4-01", outputFormat: "Yes/No" })).expectedNa).toBeFalsy();
+  });
+  it("reads board attendance (A1-07) from the annual-report table first, web only as fallback", () => {
+    const s = evidenceStrategyFor(item({ id: "A1-07", outputFormat: "%" }));
+    expect(s.from).toBe("document");
+    expect(s.expectedNa).toBeFalsy(); // document-first, not an expected-NA web item
+    expect(s.webFallback).toBe(true);
   });
   it("routes Bucket-A items to the right harvested source (notes / transcripts / ratings)", () => {
     // auditor-fee note → Gemini note reading
