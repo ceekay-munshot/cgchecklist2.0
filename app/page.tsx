@@ -5,13 +5,17 @@ import SearchLauncher from "@/app/components/SearchLauncher";
 
 export default async function Home() {
   await connection();
-  let cards: CompanyCard[] = [];
+  let listed: CompanyCard[] = [];
+  let unlisted: CompanyCard[] = [];
   let dbError = false;
   try {
-    // Only surface complete, high-coverage runs: DONE and with MORE THAN 85 of
-    // the ~103 items actually answered (green/red/neutral, not blanks). This hides
-    // thin/half-filled companies (e.g. 34/103, 51/103) that read as low quality.
-    cards = (await listCompanyCards()).filter((c) => c.status === "DONE" && c.answered > 85);
+    const all = await listCompanyCards();
+    // Listed: complete, high-coverage runs (>85 of ~103 answered) — hides
+    // thin/half-filled companies that read as low quality.
+    listed = all.filter((c) => c.ticker && c.status === "DONE" && c.answered > 85);
+    // Unlisted (uploaded documents): partial coverage is expected (market/DB
+    // items are N/A), so use a relaxed bar and a separate section.
+    unlisted = all.filter((c) => !c.ticker && c.status === "DONE" && c.answered > 20);
   } catch {
     dbError = true;
   }
@@ -34,23 +38,25 @@ export default async function Home() {
           <span className="text-slate-400">No numeric scoring.</span>
         </p>
         <SearchLauncher />
+        <p className="mt-3 text-sm text-slate-500">
+          Private / unlisted company?{" "}
+          <Link href="/unlisted/new" className="font-semibold text-indigo-600 transition hover:text-indigo-700">
+            Upload its documents →
+          </Link>
+        </p>
       </section>
 
-      {/* Companies */}
+      {/* Listed companies */}
       <section className="mt-10">
         <div className="mb-3 flex items-end justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Analysed companies {cards.length > 0 && <span className="text-slate-300">· {cards.length}</span>}
+            Analysed companies {listed.length > 0 && <span className="text-slate-300">· {listed.length}</span>}
           </h2>
         </div>
 
         {dbError ? (
-          <EmptyPanel
-            emoji="🔌"
-            title="Database unavailable"
-            body="Couldn't reach the database. Check DATABASE_URL, then refresh."
-          />
-        ) : cards.length === 0 ? (
+          <EmptyPanel emoji="🔌" title="Database unavailable" body="Couldn't reach the database. Check DATABASE_URL, then refresh." />
+        ) : listed.length === 0 ? (
           <EmptyPanel
             emoji="🌱"
             title="No reports yet"
@@ -58,7 +64,33 @@ export default async function Home() {
           />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {cards.map((c) => (
+            {listed.map((c) => (
+              <CompanyTile key={c.runId} c={c} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Unlisted companies (uploaded documents) */}
+      <section className="mt-10">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Unlisted companies {unlisted.length > 0 && <span className="text-slate-300">· {unlisted.length}</span>}
+          </h2>
+          <Link href="/unlisted/new" className="text-xs font-semibold text-indigo-600 transition hover:text-indigo-700">
+            + Analyse an unlisted company
+          </Link>
+        </div>
+
+        {unlisted.length === 0 ? (
+          <EmptyPanel
+            emoji="📄"
+            title="No unlisted companies yet"
+            body="Upload a private company’s annual report or financial statements to analyse it on the same checklist."
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {unlisted.map((c) => (
               <CompanyTile key={c.runId} c={c} />
             ))}
           </div>

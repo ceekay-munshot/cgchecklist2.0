@@ -114,6 +114,25 @@ export function useAnalyzeRun() {
     [busy, goToReport, poll, stopPolling],
   );
 
+  // Show the live modal for an ALREADY-STARTED run (e.g. an unlisted upload that
+  // created the run itself). Skips the POST /api/analyze; polls by runId.
+  const launchByRun = useCallback(
+    (runId: string, opts: { label?: string; dispatched?: boolean; dispatchError?: string } = {}) => {
+      setModal({
+        ticker: opts.label ?? runId,
+        runId,
+        dispatched: opts.dispatched !== false,
+        dispatchError: opts.dispatchError,
+        startedAt: Date.now(),
+      });
+      setProgress(INITIAL);
+      stopPolling();
+      pollRef.current = setInterval(() => poll(runId, runId), POLL_MS);
+      poll(runId, runId);
+    },
+    [poll, stopPolling],
+  );
+
   const closeModal = useCallback(() => {
     stopPolling();
     setModal(null);
@@ -130,7 +149,7 @@ export function useAnalyzeRun() {
     />
   ) : null;
 
-  return { launch, busy, error, overlay };
+  return { launch, launchByRun, busy, error, overlay };
 }
 
 // ---------------------------------------------------------------------------

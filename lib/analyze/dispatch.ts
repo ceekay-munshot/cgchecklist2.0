@@ -50,14 +50,15 @@ export interface DispatchResult {
   error?: string;
 }
 
-export async function triggerAnalysisWorkflow(
-  ticker: string,
-  opts: { exchange?: string; force?: boolean } = {},
+/** POST a workflow_dispatch to a specific workflow file with the given inputs. */
+async function dispatchWorkflow(
+  workflow: string,
+  inputs: Record<string, string>,
 ): Promise<DispatchResult> {
   const cfg = dispatchConfig();
   if (!cfg) return { ok: false, error: "dispatch_not_configured" };
 
-  const url = `https://api.github.com/repos/${cfg.repo}/actions/workflows/${encodeURIComponent(cfg.workflow)}/dispatches`;
+  const url = `https://api.github.com/repos/${cfg.repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -70,14 +71,7 @@ export async function triggerAnalysisWorkflow(
         // is rejected with "403 forbidden by administrative rules".
         "User-Agent": "cgchecklist-ondemand",
       },
-      body: JSON.stringify({
-        ref: cfg.ref,
-        inputs: {
-          ticker,
-          ...(opts.exchange ? { exchange: opts.exchange } : {}),
-          force: opts.force ? "true" : "false",
-        },
-      }),
+      body: JSON.stringify({ ref: cfg.ref, inputs }),
     });
     if (res.status === 204) return { ok: true };
     const text = await res.text().catch(() => "");
@@ -85,4 +79,27 @@ export async function triggerAnalysisWorkflow(
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+export async function triggerAnalysisWorkflow(
+  ticker: string,
+  opts: { exchange?: string; force?: boolean } = {},
+): Promise<DispatchResult> {
+  const cfg = dispatchConfig();
+  if (!cfg) return { ok: false, error: "dispatch_not_configured" };
+  return dispatchWorkflow(cfg.workflow, {
+    ticker,
+    ...(opts.exchange ? { exchange: opts.exchange } : {}),
+    force: opts.force ? "true" : "false",
+  });
+}
+
+/**
+ * Analyse an ALREADY-INGESTED run (unlisted uploads) — no Screener harvest.
+ * Dispatches analyze-run.yml, whose script resolves the arg as a runId and
+ * processes the run's stored SourceDocs, then the MUNS fill.
+ */
+export async function triggerRunAnalysis(runId: string): Promise<DispatchResult> {
+  const workflow = process.env.GITHUB_ANALYZE_RUN_WORKFLOW || "analyze-run.yml";
+  return dispatchWorkflow(workflow, { ticker: runId, force: "false" });
 }
