@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
-import { getEvidence, evidenceStrategyFor, loadCompanyScale } from "./evidence";
+import { getEvidence, evidenceStrategyFor, loadCompanyScale, isUnlistedRun } from "./evidence";
 import { analyzeItem } from "./analyzeItem";
 import { assignFlag } from "./flag";
+import { isListedOnlyItem } from "./applicability";
 import { QuotaExhaustedError } from "./quota";
 import {
   kindOf,
@@ -68,6 +69,31 @@ export function buildVerdict(item: EngineItem, analysis: Analysis, flagRes: Flag
 export async function evaluateItem(item: EngineItem, runId: string): Promise<ItemEvaluation> {
   const kind = kindOf(item);
   try {
+    // Applicability gate: a LISTED-ONLY item (SEBI/market/stock disclosure) does
+    // not apply to an UNLISTED company. Short-circuit to an explicit, honest N/A
+    // instead of a misleading fake-green or a noisy "not found" — and skip the
+    // evidence + LLM work entirely.
+    if (isListedOnlyItem(item.id) && (await isUnlistedRun(runId))) {
+      const result: ItemEvaluation = {
+        itemId: item.id,
+        runId,
+        sectionCode: item.sectionCode,
+        item: item.item,
+        kind,
+        flag: "NOT_AVAILABLE",
+        verdict: "Not applicable — this is a listed-company / market disclosure; the company is unlisted.",
+        value: "not applicable",
+        confidence: "high",
+        isNonNegotiable: item.isNonNegotiable,
+        gatePass: null,
+        needsReview: false,
+        providersUsed: [],
+        status: "DONE",
+      };
+      await persist(result);
+      return result;
+    }
+
     const evidence = await getEvidence(item, runId);
     const analysis = await analyzeItem(item, evidence);
     // Company size (Tier-1) lets assignFlag scale ₹-amounts for materiality.

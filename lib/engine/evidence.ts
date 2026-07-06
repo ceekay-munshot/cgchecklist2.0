@@ -445,6 +445,23 @@ async function loadCompany(runId: string): Promise<Company | null> {
   return run?.company ?? null;
 }
 
+// Is this run for an UNLISTED company (no ticker)? Memoised per run — it drives
+// item applicability (listed-only items are N/A for unlisted companies).
+const unlistedCache = new Map<string, Promise<boolean>>();
+
+/** Reset the per-run unlisted cache (tests). */
+export function resetUnlistedCache(): void {
+  unlistedCache.clear();
+}
+
+export function isUnlistedRun(runId: string): Promise<boolean> {
+  const cached = unlistedCache.get(runId);
+  if (cached) return cached;
+  const p = loadCompany(runId).then((c) => !!c && !c.ticker);
+  unlistedCache.set(runId, p);
+  return p;
+}
+
 // Company size (₹ crore) for materiality scaling — read once per run from the
 // Tier-1 SCREENER_PAGE and memoised (it does not change within a run).
 const scaleCache = new Map<string, Promise<CompanyScale | null>>();
