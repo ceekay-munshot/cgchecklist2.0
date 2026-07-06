@@ -11,7 +11,8 @@ vi.mock("@/lib/scrape", () => ({
   webResearcher: { search: vi.fn(), fetchUrl: vi.fn() },
 }));
 
-import { evidenceStrategyFor, getEvidence } from "./evidence";
+import { buildWebQuery, evidenceStrategyFor, getEvidence } from "./evidence";
+import type { Company } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
 import type { EngineItem } from "./types";
@@ -31,6 +32,28 @@ function item(p: Partial<EngineItem> & { id: string }): EngineItem {
 }
 
 const sd = (p: Partial<SourceDoc>): SourceDoc => p as unknown as SourceDoc;
+
+const company = (p: Partial<Company>): Company => p as unknown as Company;
+
+describe("buildWebQuery — anchor web research to the Indian listed company", () => {
+  it("appends an India anchor so a short name can't match a foreign namesake", () => {
+    // "Trent" alone matched "Severn Trent PLC"; anchor it to India + the ticker.
+    const q = buildWebQuery(company({ name: "Trent", ticker: "TRENT" }), "senior management team tenure");
+    expect(q).toContain("Trent");
+    expect(q).toMatch(/india/i);
+    expect(q).toContain("senior management team tenure");
+  });
+  it("does not double-anchor a name that is already India-qualified", () => {
+    const q = buildWebQuery(company({ name: "Trent Limited", ticker: "TRENT" }), "auditor reputation");
+    // "Limited" already disambiguates — don't bolt on a redundant " India".
+    expect(q.match(/india/gi) ?? []).toHaveLength(0);
+    expect(q).toContain("Trent Limited");
+    expect(q).toContain("auditor reputation");
+  });
+  it("falls back to the bare topic when there is no company", () => {
+    expect(buildWebQuery(null, "promoter background")).toBe("promoter background");
+  });
+});
 
 describe("evidenceStrategyFor — routing per item", () => {
   it("routes Tier-1 numeric items to the Screener page", () => {

@@ -143,6 +143,14 @@ describe("Screener wins — other income, series rows, trend classifiers", () =>
     expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["40", "50", "55"] }).flag).toBe("NEUTRAL"); // +37%
     expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["60", "50", "40"] }).flag).toBe("GREEN"); // improving
   });
+  it("A8-02 negative working-capital days are favourable, never a false red (TRENT case)", () => {
+    // Negative WC days = supplier/customer-float funded. −15→−2 is NOT "+87% worse".
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["-15", "-8", "-2"] }).flag).toBe("GREEN");
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["-2", "-10", "-20"] }).flag).toBe("GREEN"); // still negative
+    // A near-zero/negative base: judge the absolute day move, not a % off a tiny base.
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["-5", "5", "8"] }).flag).toBe("GREEN"); // +13 days, still low
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["2", "40", "60"] }).flag).toBe("RED"); // +58 days off a tiny base
+  });
   it("A10-01 dividend consistency: consistent green, erratic/nil neutral (never a false red)", () => {
     expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: ["30", "32", "35"] }).flag).toBe("GREEN");
     expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: ["30", "32", "0"] }).flag).toBe("NEUTRAL"); // erratic

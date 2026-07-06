@@ -75,6 +75,7 @@ export const MATERIALITY_GUARD_ITEMS = new Set<string>([
   "A7a-15", // unhedged forex/derivative (%)
   "A5-05", // arm's-length assertion (Yes/No)
   "A5-06", // minority dissent on RPTs (% against)
+  "A8-06", // goodwill build-up & impairment — a tiny impairment (₹cr) is not a red
 ]);
 /** Below this % of net worth, a cited amount is treated as immaterial by the guard. */
 const GUARD_IMMATERIAL_PCT = 10;
@@ -311,15 +312,26 @@ export function auditCommitteeFlag(value: string, evidenceQuote: string | null |
  */
 export function cheapInsiderEquityFlag(value: string, evidenceQuote: string | null | undefined): MaterialityResult {
   const text = `${value} ${evidenceQuote ?? ""}`.toLowerCase();
-  if (/\b(no preferential|none|not issued|no warrants|at[ -]market|no cheap|no discounted)\b/.test(text)) {
+  // Cheap-equity terms (stems, no trailing \b, so plurals match).
+  const cheapTerms =
+    "preferential allotment|preferential issue|preferential basis|preferential|warrant|at a discount|discounted|below market|at a price lower|cheap equity";
+  // A NEGATED mention — "no promoter warrants or preferential allotments", "Nil
+  // preferential issue", "warrants: none" — is a favourable, GREEN finding, NOT a
+  // red. The bare RED test below matched the very words that a nil statement uses
+  // to DENY the exposure, so read the negation first. `statesNil` covers the
+  // generic "nil / none / not applicable" affirmations.
+  const negatedCheap =
+    new RegExp(`\\b(no|nil|none|not|without|zero)\\b[\\w\\s,/&()-]{0,32}(${cheapTerms})`).test(text) ||
+    new RegExp(`(${cheapTerms})[\\w\\s,/&()-]{0,20}\\b(nil|none|not (issued|applicable|made))\\b`).test(text);
+  if (
+    /\b(no preferential|not issued|no warrants|at[ -]market|no cheap|no discounted)\b/.test(text) ||
+    negatedCheap ||
+    statesNil(text)
+  ) {
     return { flag: "GREEN", reason: `No preferential/discounted issuance to insiders disclosed (${value}).` };
   }
-  // Stems (no trailing \b) so plurals match: promoter→promoters, warrant→warrants.
   const insider = /\b(promoter|insider|related part|key managerial|kmp)/.test(text);
-  const cheap =
-    /\b(preferential allotment|preferential issue|preferential basis|warrant|at a discount|discounted|below market|at a price lower)/.test(
-      text,
-    );
+  const cheap = new RegExp(`\\b(${cheapTerms})`).test(text);
   if (insider && cheap) {
     return { flag: "RED", reason: `Preferential/discounted equity or warrants issued to insiders/promoters (${value}).` };
   }

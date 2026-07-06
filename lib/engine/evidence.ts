@@ -112,6 +112,35 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
     sections: ["share capital", "changes in equity share capital", "reconciliation of the number of shares", "preferential issue", "employee stock"],
     keywords: ["preferential allotment", "warrants", "at a discount", "bonus issue", "rights issue", "preferential basis", "employee stock option"],
   },
+  // A6-05 CEO-to-median pay ratio. The number lives in the Section 197 / Rule 5(1)
+  // disclosure in the Directors'-Report annexure ("ratio of the remuneration of
+  // each director to the median remuneration of the employees") — NOT the generic
+  // remuneration policy note (which is A12-02). Target that specific table so the
+  // numeric ratio is extracted and the deterministic A6-05 band can read it.
+  "A6-05": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: [
+      "ratio of the remuneration of each director to the median remuneration",
+      "ratio of remuneration of each director to the median",
+      "the ratio of the remuneration of each director",
+      "median remuneration of employees",
+      "percentage increase in the median remuneration",
+      "particulars of employees",
+      "remuneration of directors",
+    ],
+    keywords: [
+      "median remuneration",
+      "ratio of the remuneration",
+      "ratio to median",
+      "median employee",
+      "percentage increase in remuneration",
+      "managing director",
+      "times the median",
+    ],
+    webFallback: true,
+    webQuery: "CEO managing director remuneration to median employee ratio section 197",
+  },
   // Employee stock options / share-based payments note (TCS has none → GREEN).
   "A6-04": {
     from: "document",
@@ -757,14 +786,35 @@ function mentionsCompany(hay: string, tokens: string[]): boolean {
   return tokens.some((t) => h.includes(t));
 }
 
+/**
+ * Build a web-research query anchored to THIS Indian listed company. A bare
+ * ticker/short name ("Trent") collides with same-named foreign entities ("Severn
+ * Trent PLC"), which produced confidently-wrong web verdicts. Since the product
+ * only ever analyses Indian listed companies, we append an India / exchange anchor
+ * (and prefer the full registered name over a short ticker) so the researcher
+ * returns the right entity. Pure + exported for unit testing.
+ */
+export function buildWebQuery(company: Company | null, topic: string): string {
+  const fullName = (company?.name ?? "").trim();
+  const ticker = (company?.ticker ?? "").trim();
+  const name = fullName || ticker;
+  if (!name) return topic.trim();
+  // Anchor once: the registered name, plus "India" and the NSE/BSE ticker when the
+  // name itself isn't already India-qualified, so search disambiguates the country.
+  const alreadyIndian = /\bindia\b|\blimited\b|\bltd\b/i.test(name);
+  const anchorBits = [name];
+  if (!alreadyIndian) anchorBits.push("India");
+  if (ticker && ticker.toLowerCase() !== name.toLowerCase()) anchorBits.push(`(NSE: ${ticker})`);
+  return [anchorBits.join(" "), topic].filter(Boolean).join(" ").trim();
+}
+
 async function getWebEvidence(
   item: EngineItem,
   company: Company | null,
   strategy: EvidenceStrategy,
   kind: ItemKind,
 ): Promise<Evidence> {
-  const name = company?.name || company?.ticker || "";
-  const query = [name, strategy.webQuery ?? item.item].filter(Boolean).join(" ").trim();
+  const query = buildWebQuery(company, strategy.webQuery ?? item.item);
   if (!query) return { status: "not_available", from: "web", kind, note: "no company/query for web fallback" };
 
   const res = await webResearcher.search(query);

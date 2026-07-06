@@ -296,8 +296,27 @@ export const CUSTOM_SERIES: Record<
     if (first == null || last == null) {
       return { flag: "NEUTRAL", reason: "Working-capital-days history is incomplete — trend not established." };
     }
-    const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : last > 0 ? 100 : 0;
     const span = `${Math.round(first)}→${Math.round(last)} days`;
+    // NEGATIVE working-capital days = the company is funded by supplier/customer
+    // float (money collected before it pays) — a FAVOURABLE position, never a red.
+    // A % change off a negative or near-zero base is mathematically meaningless
+    // (−15→−2 is not "+87% worse"), so for a small/negative base judge the ABSOLUTE
+    // day movement instead of a percentage.
+    if (last <= 0) {
+      return { flag: "GREEN", reason: `Working-capital days are negative (${span}) — the company is funded by supplier/customer float (favourable).` };
+    }
+    if (first <= 0 || Math.abs(first) < 15) {
+      const delta = Math.round(last - first);
+      const d = delta >= 0 ? `+${delta}` : `${delta}`;
+      if (delta <= 15) {
+        return { flag: "GREEN", reason: `Working-capital days remain low (${span}, ${d} days) — cash conversion is not deteriorating.` };
+      }
+      if (delta >= 45) {
+        return { flag: "RED", reason: `Working-capital days rose sharply (${span}, ${d} days) — cash increasingly tied up in working capital.` };
+      }
+      return { flag: "NEUTRAL", reason: `Working-capital days rose (${span}, ${d} days).` };
+    }
+    const change = ((last - first) / Math.abs(first)) * 100;
     if (change <= 10) {
       return { flag: "GREEN", reason: `Working-capital days are stable/improving (${span}) — cash conversion is not deteriorating.` };
     }

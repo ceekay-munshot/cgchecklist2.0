@@ -181,6 +181,18 @@ describe("cheapInsiderEquityFlag (A3-05) — only a real promoter discount is a 
   it("GREENs a clean 'none / at-market' disclosure", () => {
     expect(cheapInsiderEquityFlag("No preferential allotment or warrants to promoters", null).flag).toBe("GREEN");
   });
+  it("does NOT red when a nil statement NAMES the exposure it denies (TRENT false positive)", () => {
+    // These sentences contain both an insider word and a cheap-equity word, but
+    // the words are NEGATED — the company is DENYING the exposure, not disclosing it.
+    for (const t of [
+      "Nil — no promoter warrants or preferential allotments during the year",
+      "No warrants or preferential allotment made to promoters or related parties",
+      "Preferential issue to promoters: none",
+      "There were no discounted issuances to any promoter or KMP",
+    ]) {
+      expect(cheapInsiderEquityFlag(t, null).flag).toBe("GREEN");
+    }
+  });
 });
 
 describe("auditOpinionFlag (A4-05) — boilerplate going-concern is not a qualification", () => {
