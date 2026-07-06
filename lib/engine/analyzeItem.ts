@@ -112,6 +112,10 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   if (item.id === "A1-06") {
     return analyzeDirectors(item, evidence);
   }
+  // A1-04 True independence — per-independent-director check (tenure / ties / fees).
+  if (item.id === "A1-04") {
+    return analyzeIndependence(item, evidence);
+  }
   // A2-01 categorical rule can decide compliance instead of returning NA.
   if (item.id === "A2-01") {
     return analyzeAuditCommittee(item, evidence);
@@ -396,6 +400,97 @@ async function analyzeDirectors(item: EngineItem, evidence: Evidence): Promise<A
     table,
     citation: citationForPage(evidence, null),
     confidence: maxBoards != null ? "high" : "low",
+    providerUsed: provider,
+  };
+}
+
+// ---- per-director independence table (A1-04 True Independence) ----
+
+interface IndepRow {
+  name: string;
+  tenureYears?: number | null;
+  concern?: string;
+  trulyIndependent?: boolean;
+}
+interface IndepExtract {
+  found: boolean;
+  directors?: IndepRow[];
+}
+
+const INDEP_SCHEMA = {
+  type: "object",
+  properties: {
+    found: { type: "boolean" },
+    directors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          tenureYears: { type: ["integer", "null"] },
+          concern: { type: "string" },
+          trulyIndependent: { type: "boolean" },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["found"],
+  additionalProperties: false,
+} as const;
+
+async function analyzeIndependence(item: EngineItem, evidence: Evidence): Promise<Analysis> {
+  const passages = evidence.passages ?? [];
+  if (!passages.length) return NA;
+
+  const prompt =
+    `You are reading a company's Corporate Governance report + directors' profiles + the ` +
+    `director-wise remuneration table from an annual report.\n` +
+    `List every INDEPENDENT director. For each, give: "tenureYears" (years since first ` +
+    `appointment, integer if derivable), and assess GENUINE independence. Set ` +
+    `"trulyIndependent" to FALSE only on a CLEAR disqualifier — tenure over ~10 years, is/was ` +
+    `an employee or executive of the company/group, related to the promoter, or drawing heavy ` +
+    `non-sitting-fee pay (large commission/consulting fees beyond normal sitting fees). If ` +
+    `genuinely independent, or if it's unclear, set it TRUE (benefit of the doubt — do NOT ` +
+    `penalise on suspicion). When FALSE, put the specific reason in "concern" (<=80 chars). ` +
+    `Use the MOST RECENT year. If you cannot find the independent directors, set "found" false.\n\n` +
+    passagesBlock(passages);
+
+  const res = await extract<IndepExtract>("longContext", { prompt, temperature: 0 }, INDEP_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
+  const ids = (data.directors ?? []).filter((d) => d.name && d.name.trim());
+  if (!data.found || ids.length === 0) return NA;
+
+  // Concerns first so the flag-driving cases read at the top.
+  const sorted = [...ids].sort((a, b) => Number(a.trulyIndependent !== false) - Number(b.trulyIndependent !== false));
+  const flagged = sorted.filter((d) => d.trulyIndependent === false);
+
+  // value LEADS with the concern count so the A1-04 custom rule reads it.
+  const value = `${flagged.length} of ${sorted.length} independent directors with a genuine independence concern`;
+  const rationale =
+    flagged.length === 0
+      ? `All ${sorted.length} independent directors appear genuinely independent — no long-tenure, ex-employee, promoter-related or fee-dependence red flags identified.`
+      : `${flagged.length} of ${sorted.length} independent directors carry an independence concern: ${flagged
+          .map((d) => `${d.name}${d.concern ? ` (${d.concern})` : ""}`)
+          .join("; ")}. A director who isn't truly independent weakens the board's check on the promoter.`;
+  const table: DataTable = {
+    columns: ["Independent director", "Tenure (yrs)", "Independence check", "Status"],
+    rows: sorted.map((d) => [
+      d.name.trim(),
+      d.tenureYears != null ? String(d.tenureYears) : "—",
+      d.trulyIndependent === false ? (d.concern || "Concern") : "No concern found",
+      d.trulyIndependent === false ? "Concern" : "Independent",
+    ]),
+  };
+
+  return {
+    value,
+    rationale,
+    table,
+    citation: citationForPage(evidence, null),
+    confidence: "medium",
     providerUsed: provider,
   };
 }

@@ -225,6 +225,14 @@ export const CUSTOM_NUMERIC: Record<string, (n: number) => NumericClassification
     if (n >= 200) return { flag: "RED", reason: `CEO-to-median pay ratio ${n}x is extreme and hard to justify (>200x).` };
     return { flag: "NEUTRAL", reason: `CEO-to-median pay ratio ${n}x is elevated (100–200x) — reasonable only if clearly justified.` };
   },
+  // A1-04 True independence — driven by the per-director concern COUNT (from the
+  // analyzeIndependence table). None = green; one = review (neutral); several =
+  // the board's independence is systemically compromised (red).
+  "A1-04": (n) => {
+    if (n <= 0) return { flag: "GREEN", reason: `All independent directors appear genuinely independent — no disqualifying tenure, ties or fee-dependence.` };
+    if (n >= 2) return { flag: "RED", reason: `${n} “independent” directors are not genuinely independent (long tenure / ex-employee / promoter ties / fee dependence) — board independence is compromised.` };
+    return { flag: "NEUTRAL", reason: `1 independent director carries an independence concern — worth review; see the per-director breakdown.` };
+  },
   // A8-05 Other income as % of PBT. A large, recurring non-operating slice of
   // profit is an earnings-quality concern; a small slice is fine. Bands are
   // deliberately lenient so a cash-rich company's legitimate treasury income

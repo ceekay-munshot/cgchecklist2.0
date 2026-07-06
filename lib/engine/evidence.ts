@@ -134,6 +134,25 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
   // (A9-05 rating actions intentionally NOT routed to the harvested ICRA doc —
   // that rationale lists OTHER companies and produced a false red; honest NA
   // until a TCS-specific rating source is harvested.)
+  // True independence — read the governance report + director profiles +
+  // director-wise remuneration (tenure, fees, ties) for a per-director check.
+  "A1-04": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: [
+      "corporate governance",
+      "brief profile of the directors",
+      "profile of directors",
+      "board of directors",
+      "composition of the board",
+      "remuneration of directors",
+      "sitting fees",
+    ],
+    keywords: ["independent director", "tenure", "date of appointment", "sitting fees", "commission", "former employee", "related party", "years"],
+    useGeminiNote: true,
+    webFallback: true,
+    webQuery: "independent directors true independence tenure ex-employee promoter ties",
+  },
   // Overboarding — the "directorships in other companies" table IS in the
   // corporate-governance report (SEBI-mandated). Read it there (per-director
   // extractor), web only as enrichment/fallback.

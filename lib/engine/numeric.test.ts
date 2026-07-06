@@ -98,6 +98,11 @@ describe("CUSTOM_NUMERIC — classifiers for textual-band items", () => {
     expect(CUSTOM_NUMERIC["A8-05"](30).flag).toBe("NEUTRAL");
     expect(CUSTOM_NUMERIC["A8-05"](50).flag).toBe("RED");
   });
+  it("A1-04 independence concerns: none green, one neutral, several red", () => {
+    expect(CUSTOM_NUMERIC["A1-04"](0).flag).toBe("GREEN");
+    expect(CUSTOM_NUMERIC["A1-04"](1).flag).toBe("NEUTRAL");
+    expect(CUSTOM_NUMERIC["A1-04"](3).flag).toBe("RED");
+  });
 });
 
 const SDATA = {
