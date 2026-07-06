@@ -103,6 +103,11 @@ describe("CUSTOM_NUMERIC — classifiers for textual-band items", () => {
     expect(CUSTOM_NUMERIC["A1-04"](1).flag).toBe("NEUTRAL");
     expect(CUSTOM_NUMERIC["A1-04"](3).flag).toBe("RED");
   });
+  it("A1-08 skills matrix: clean green, one gap neutral, boilerplate/gaps red", () => {
+    expect(CUSTOM_NUMERIC["A1-08"](0).flag).toBe("GREEN");
+    expect(CUSTOM_NUMERIC["A1-08"](1).flag).toBe("NEUTRAL");
+    expect(CUSTOM_NUMERIC["A1-08"](2).flag).toBe("RED");
+  });
 });
 
 const SDATA = {

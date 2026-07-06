@@ -233,6 +233,13 @@ export const CUSTOM_NUMERIC: Record<string, (n: number) => NumericClassification
     if (n >= 2) return { flag: "RED", reason: `${n} “independent” directors are not genuinely independent (long tenure / ex-employee / promoter ties / fee dependence) — board independence is compromised.` };
     return { flag: "NEUTRAL", reason: `1 independent director carries an independence concern — worth review; see the per-director breakdown.` };
   },
+  // A1-08 Board skills/competence matrix — concern points (boilerplate weighted
+  // 2, each uncovered competency 1). None = green, one gap = review, more = red.
+  "A1-08": (n) => {
+    if (n <= 0) return { flag: "GREEN", reason: `Board skills matrix is specific and every identified competency is covered — no gaps.` };
+    if (n >= 2) return { flag: "RED", reason: `Board skills matrix is boilerplate and/or has visible competency gaps — the board may lack expertise its strategy needs.` };
+    return { flag: "NEUTRAL", reason: `One competency gap in the board skills matrix — worth review; see the breakdown.` };
+  },
   // A8-05 Other income as % of PBT. A large, recurring non-operating slice of
   // profit is an earnings-quality concern; a small slice is fine. Bands are
   // deliberately lenient so a cash-rich company's legitimate treasury income

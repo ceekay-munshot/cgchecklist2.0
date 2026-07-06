@@ -116,6 +116,10 @@ export async function analyzeItem(item: EngineItem, evidence: Evidence): Promise
   if (item.id === "A1-04") {
     return analyzeIndependence(item, evidence);
   }
+  // A1-08 Board skills/competence matrix — is it specific, and are there gaps?
+  if (item.id === "A1-08") {
+    return analyzeSkillMatrix(item, evidence);
+  }
   // A2-01 categorical rule can decide compliance instead of returning NA.
   if (item.id === "A2-01") {
     return analyzeAuditCommittee(item, evidence);
@@ -483,6 +487,92 @@ async function analyzeIndependence(item: EngineItem, evidence: Evidence): Promis
       d.trulyIndependent === false ? (d.concern || "Concern") : "No concern found",
       d.trulyIndependent === false ? "Concern" : "Independent",
     ]),
+  };
+
+  return {
+    value,
+    rationale,
+    table,
+    citation: citationForPage(evidence, null),
+    confidence: "medium",
+    providerUsed: provider,
+  };
+}
+
+// ---- board skills/competence matrix (A1-08; structured extraction) ----
+
+interface SkillRow {
+  skill: string;
+  covered?: boolean;
+}
+interface SkillExtract {
+  found: boolean;
+  specific?: boolean;
+  skills?: SkillRow[];
+}
+
+const SKILL_SCHEMA = {
+  type: "object",
+  properties: {
+    found: { type: "boolean" },
+    specific: { type: "boolean" },
+    skills: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          skill: { type: "string" },
+          covered: { type: "boolean" },
+        },
+        required: ["skill"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["found"],
+  additionalProperties: false,
+} as const;
+
+async function analyzeSkillMatrix(item: EngineItem, evidence: Evidence): Promise<Analysis> {
+  const passages = evidence.passages ?? [];
+  if (!passages.length) return NA;
+
+  const prompt =
+    `You are reading the board "skills / expertise / competencies" matrix from a company's ` +
+    `Corporate Governance report (SEBI requires listing the competencies the board identified ` +
+    `as required, and mapping them to directors).\n` +
+    `Extract the list of competencies. For each, set "covered" true if at least one director is ` +
+    `shown to possess it, false if it's an identified requirement that NO director covers (a ` +
+    `gap). Also set "specific" — true if the matrix is company-tailored (real, differentiated ` +
+    `competencies), false if it is generic BOILERPLATE (a copied template list with no real ` +
+    `mapping). If there is no skills matrix at all, set "found" false.\n\n` +
+    passagesBlock(passages);
+
+  const res = await extract<SkillExtract>("longContext", { prompt, temperature: 0 }, SKILL_SCHEMA);
+  if (!res) return NA;
+  const { data, provider } = res;
+  const skills = (data.skills ?? []).filter((s) => s.skill && s.skill.trim());
+  if (!data.found || skills.length === 0) return NA;
+
+  const gaps = skills.filter((s) => s.covered === false);
+  const boilerplate = data.specific === false;
+  // Boilerplate is the graver signal (weight 2 → red on its own); each gap adds 1.
+  const concernScore = (boilerplate ? 2 : 0) + gaps.length;
+
+  const value = `${concernScore} skill-matrix concern(s) — ${skills.length} competencies, ${gaps.length} gap(s)${boilerplate ? ", generic/boilerplate framing" : ", company-specific"}`;
+  const rationale =
+    concernScore === 0
+      ? `The board discloses a specific, company-tailored skills matrix covering ${skills.length} competencies, each mapped to at least one director — no visible gaps.`
+      : `${boilerplate ? "The skills matrix reads as generic/boilerplate rather than company-specific. " : ""}${
+          gaps.length
+            ? `${gaps.length} identified competenc${gaps.length === 1 ? "y is" : "ies are"} not covered by any director (${gaps
+                .map((s) => s.skill)
+                .join(", ")}). `
+            : ""
+        }A weak or gap-ridden skills matrix signals the board may lack the expertise its strategy needs.`;
+  const table: DataTable = {
+    columns: ["Competency", "Board coverage"],
+    rows: skills.map((s) => [s.skill.trim(), s.covered === false ? "Gap" : "Covered"]),
   };
 
   return {

@@ -173,6 +173,23 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
     webFallback: true,
     webQuery: "directors number of other listed company board seats overboarding",
   },
+  // Board skills/competence matrix — the SEBI-mandated skills chart in the
+  // corporate-governance report.
+  "A1-08": {
+    from: "document",
+    docTypes: ["ANNUAL_REPORT"],
+    sections: [
+      "skills / expertise / competencies",
+      "chart of the skills",
+      "matrix of skills",
+      "core skills",
+      "skills and competencies",
+      "list of core skills",
+      "skills, expertise and competencies",
+    ],
+    keywords: ["skill", "competenc", "expertise", "matrix", "identified by the board", "chart"],
+    useGeminiNote: true,
+  },
   // Board-meeting attendance IS disclosed in the corporate-governance report's
   // attendance table (not the web) — read it there first, web only as a fallback.
   "A1-07": {
