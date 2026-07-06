@@ -556,20 +556,18 @@ async function analyzeSkillMatrix(item: EngineItem, evidence: Evidence): Promise
 
   const gaps = skills.filter((s) => s.covered === false);
   const boilerplate = data.specific === false;
-  // Boilerplate is the graver signal (weight 2 → red on its own); each gap adds 1.
-  const concernScore = (boilerplate ? 2 : 0) + gaps.length;
-
-  const value = `${concernScore} skill-matrix concern(s) — ${skills.length} competencies, ${gaps.length} gap(s)${boilerplate ? ", generic/boilerplate framing" : ", company-specific"}`;
+  // The FLAG is driven only by real, verifiable coverage GAPS — never by the
+  // subjective "is this boilerplate?" judgement, which an LLM gets wrong (it
+  // once red-flagged a fully-covered, clearly company-specific matrix). We still
+  // NOTE a generic-looking matrix in the rationale, but it doesn't fire a red.
+  const value = `${gaps.length} competency gap(s) — ${skills.length} competencies identified, ${skills.length - gaps.length} covered`;
   const rationale =
-    concernScore === 0
-      ? `The board discloses a specific, company-tailored skills matrix covering ${skills.length} competencies, each mapped to at least one director — no visible gaps.`
-      : `${boilerplate ? "The skills matrix reads as generic/boilerplate rather than company-specific. " : ""}${
-          gaps.length
-            ? `${gaps.length} identified competenc${gaps.length === 1 ? "y is" : "ies are"} not covered by any director (${gaps
-                .map((s) => s.skill)
-                .join(", ")}). `
-            : ""
-        }A weak or gap-ridden skills matrix signals the board may lack the expertise its strategy needs.`;
+    gaps.length === 0
+      ? `The board discloses ${skills.length} competencies, each mapped to at least one director — no coverage gaps.` +
+        (boilerplate ? ` (The matrix framing is fairly generic, though coverage is complete.)` : ` The set is relevant to the company's business.`)
+      : `${gaps.length} identified competenc${gaps.length === 1 ? "y is" : "ies are"} not covered by any director (${gaps
+          .map((s) => s.skill)
+          .join(", ")}) — a real skill gap, signalling the board may lack expertise its strategy needs.`;
   const table: DataTable = {
     columns: ["Competency", "Board coverage"],
     rows: skills.map((s) => [s.skill.trim(), s.covered === false ? "Gap" : "Covered"]),
