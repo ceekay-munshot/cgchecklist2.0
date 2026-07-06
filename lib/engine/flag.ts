@@ -1,6 +1,6 @@
 import { callJSON } from "./llm";
 import { evidenceStrategyFor } from "./evidence";
-import { CUSTOM_NUMERIC } from "./numeric";
+import { CUSTOM_NUMERIC, CUSTOM_SERIES } from "./numeric";
 import {
   CATEGORICAL_RULES,
   classifyAmount,
@@ -104,6 +104,15 @@ export async function assignFlag(
   }
 
   const num = parseNumericValue(analysis.value);
+
+  // Trend classifier for Tier-1 series items (Working-capital days, Dividend
+  // payout): judges the whole multi-year row deterministically. Runs first so a
+  // textual "Stable/improving" band never traps it in the generic numeric path.
+  const seriesRule = CUSTOM_SERIES[item.id];
+  if (seriesRule && analysis.series && analysis.series.values.some((v) => v != null)) {
+    const c = seriesRule(analysis.series);
+    return applyGate(item, { flag: c.flag, reason: c.reason, provider: "deterministic" });
+  }
 
   // Dedicated deterministic classifier (textual-band items like A8-10, and
   // Tier-1-anchored items like A14-02 that are "Text" by format but numeric by

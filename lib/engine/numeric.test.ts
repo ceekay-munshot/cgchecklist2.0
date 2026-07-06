@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
-import { computeNumeric, CUSTOM_NUMERIC, reconcileDebtWithTier1 } from "./numeric";
+import { computeNumeric, CUSTOM_NUMERIC, CUSTOM_SERIES, findSeriesRow, reconcileDebtWithTier1 } from "./numeric";
 
 const DATA = {
   ticker: "X",
@@ -92,6 +92,56 @@ describe("CUSTOM_NUMERIC — classifiers for textual-band items", () => {
     expect(CUSTOM_NUMERIC["A6-05"](80).flag).toBe("GREEN");
     expect(CUSTOM_NUMERIC["A6-05"](150).flag).toBe("NEUTRAL");
     expect(CUSTOM_NUMERIC["A6-05"](250).flag).toBe("RED");
+  });
+  it("A8-05 other income % of PBT: small green, large red, lenient middle", () => {
+    expect(CUSTOM_NUMERIC["A8-05"](10).flag).toBe("GREEN");
+    expect(CUSTOM_NUMERIC["A8-05"](30).flag).toBe("NEUTRAL");
+    expect(CUSTOM_NUMERIC["A8-05"](50).flag).toBe("RED");
+  });
+});
+
+const SDATA = {
+  ticker: "X", url: "", ratios: {}, pros: [], cons: [], capturedAt: "",
+  profitLoss: {
+    periods: ["FY23", "FY24"],
+    rows: [
+      { label: "Other Income", values: ["8", "12"] },
+      { label: "Profit before tax", values: ["100", "120"] },
+    ],
+  },
+  ratiosTable: {
+    periods: ["FY22", "FY23", "FY24"],
+    rows: [
+      { label: "Working Capital Days", values: ["40", "45", "62"] },
+      { label: "Dividend Payout %", values: ["30", "32", "0"] },
+    ],
+  },
+} as unknown as ScreenerStructuredData;
+
+describe("Screener wins — other income, series rows, trend classifiers", () => {
+  it("otherIncomePctPbt (A8-05): latest OI ÷ PBT", () => {
+    expect(computeNumeric(SDATA, "otherIncomePctPbt")?.value).toContain("10%"); // 12/120
+  });
+  it("findSeriesRow scans the period tables", () => {
+    expect(findSeriesRow(SDATA, /working capital days/i)?.values).toEqual(["40", "45", "62"]);
+    expect(findSeriesRow(SDATA, /dividend payout/i)?.values).toEqual(["30", "32", "0"]);
+    expect(findSeriesRow(SDATA, /nonexistent row/i)).toBeNull();
+  });
+  it("A8-02 working-capital days trend: sharp rise red, stable green", () => {
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["40", "45", "62"] }).flag).toBe("RED"); // +55%
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["45", "46", "47"] }).flag).toBe("GREEN"); // ~+4%
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["40", "50", "55"] }).flag).toBe("NEUTRAL"); // +37%
+    expect(CUSTOM_SERIES["A8-02"]({ periods: [], values: ["60", "50", "40"] }).flag).toBe("GREEN"); // improving
+  });
+  it("A10-01 dividend consistency: consistent green, erratic/nil neutral (never a false red)", () => {
+    expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: ["30", "32", "35"] }).flag).toBe("GREEN");
+    expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: ["30", "32", "0"] }).flag).toBe("NEUTRAL"); // erratic
+    expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: ["0", "0", "0"] }).flag).toBe("NEUTRAL"); // nil
+    expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: [] }).flag).toBe("NEUTRAL");
+    // Guarantee: this rule can never produce a RED.
+    for (const vals of [["0", "0"], ["30", "0", "0"], ["10", "20", "0", "5"]]) {
+      expect(CUSTOM_SERIES["A10-01"]({ periods: [], values: vals }).flag).not.toBe("RED");
+    }
   });
   it("A14-02 debt level anchored on Tier-1 D/E: never red when debt-free", () => {
     // D/E 0.11 (TCS) -> GREEN, never RED — can't contradict A14-01.

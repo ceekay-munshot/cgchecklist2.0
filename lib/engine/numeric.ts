@@ -100,6 +100,8 @@ const CFO_RE = /operating activit|cash (generated |flow )?from operat|net cash (
 const PAT_RE = /net profit|profit after tax|profit for the (year|period)/i;
 const EBITDA_RE = /operating profit/i;
 const DEP_RE = /depreciation/i;
+const OTHER_INCOME_RE = /other income/i;
+const PBT_RE = /profit before tax|\bpbt\b/i;
 
 /** Compute a numeric field from the harvested financials. */
 export function computeNumeric(
@@ -161,6 +163,17 @@ export function computeNumeric(
       };
     }
 
+    case "otherIncomePctPbt": {
+      const oi = latestRowNumber(data.profitLoss, OTHER_INCOME_RE);
+      const pbt = latestRowNumber(data.profitLoss, PBT_RE);
+      if (oi == null || pbt == null || pbt <= 0) return null;
+      const pct = Math.round((oi / pbt) * 1000) / 10;
+      return {
+        value: `${pct}% of PBT (other income ₹${Math.round(oi)}cr ÷ PBT ₹${Math.round(pbt)}cr)`,
+        note: "other income as % of profit before tax",
+      };
+    }
+
     case "freeFloat": {
       const p = promoterLatest(data);
       if (p == null) return null;
@@ -211,6 +224,89 @@ export const CUSTOM_NUMERIC: Record<string, (n: number) => NumericClassification
     if (n < 100) return { flag: "GREEN", reason: `CEO-to-median pay ratio ${n}x is within a reasonable range (extreme only above ~100–200x).` };
     if (n >= 200) return { flag: "RED", reason: `CEO-to-median pay ratio ${n}x is extreme and hard to justify (>200x).` };
     return { flag: "NEUTRAL", reason: `CEO-to-median pay ratio ${n}x is elevated (100–200x) — reasonable only if clearly justified.` };
+  },
+  // A8-05 Other income as % of PBT. A large, recurring non-operating slice of
+  // profit is an earnings-quality concern; a small slice is fine. Bands are
+  // deliberately lenient so a cash-rich company's legitimate treasury income
+  // isn't false-flagged as a red.
+  "A8-05": (n) => {
+    if (n <= 20) return { flag: "GREEN", reason: `Other income is ${n}% of PBT — profit is operations-led, not propped by non-operating income.` };
+    if (n >= 45) return { flag: "RED", reason: `Other income is ${n}% of PBT — a large share of profit is non-operating (earnings-quality concern).` };
+    return { flag: "NEUTRAL", reason: `Other income is ${n}% of PBT — a moderate non-operating share of profit.` };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Series (trend) classifiers — judge a whole multi-year row deterministically.
+// Keyed by item id; each gets the parsed number series (oldest→newest).
+// ---------------------------------------------------------------------------
+
+function firstNum(nums: Array<number | null>): number | null {
+  for (const n of nums) if (n != null) return n;
+  return null;
+}
+function lastNum(nums: Array<number | null>): number | null {
+  for (let i = nums.length - 1; i >= 0; i--) {
+    const n = nums[i];
+    if (n != null) return n;
+  }
+  return null;
+}
+
+/** Find a whole row across the Screener period tables → its periods + values. */
+export function findSeriesRow(
+  data: ScreenerStructuredData,
+  match: RegExp,
+): { periods: string[]; values: Array<string | null> } | null {
+  for (const t of [data.ratiosTable, data.profitLoss, data.balanceSheet, data.cashFlow]) {
+    if (!t) continue;
+    const row = t.rows.find((r) => match.test(r.label));
+    if (row) return { periods: t.periods, values: row.values };
+  }
+  return null;
+}
+
+export const CUSTOM_SERIES: Record<
+  string,
+  (series: { periods: string[]; values: Array<string | null> }) => NumericClassification
+> = {
+  // A8-02 Working-capital-days creep. Judged on the TREND, not the level: stable
+  // or improving is fine; a sharp multi-year rise means cash is increasingly tied
+  // up in working capital (a classic forensic flag).
+  "A8-02": (s) => {
+    const nums = s.values.map(parseScreenerNumber);
+    const first = firstNum(nums);
+    const last = lastNum(nums);
+    if (first == null || last == null) {
+      return { flag: "NEUTRAL", reason: "Working-capital-days history is incomplete — trend not established." };
+    }
+    const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : last > 0 ? 100 : 0;
+    const span = `${Math.round(first)}→${Math.round(last)} days`;
+    if (change <= 10) {
+      return { flag: "GREEN", reason: `Working-capital days are stable/improving (${span}) — cash conversion is not deteriorating.` };
+    }
+    if (change >= 40) {
+      return { flag: "RED", reason: `Working-capital days rose sharply (${span}, +${Math.round(change)}%) — cash increasingly tied up in working capital.` };
+    }
+    return { flag: "NEUTRAL", reason: `Working-capital days rose modestly (${span}, +${Math.round(change)}%).` };
+  },
+  // A10-01 Dividend-policy consistency. GREEN only for a genuinely consistent
+  // payer; a nil/erratic record is NEUTRAL, never a false red — "nil despite
+  // cash" needs a cash-context check we don't do deterministically here.
+  "A10-01": (s) => {
+    const recent = s.values.map(parseScreenerNumber).filter((n): n is number => n != null).slice(-4);
+    if (recent.length === 0) {
+      return { flag: "NEUTRAL", reason: "Dividend-payout history is not available — not flagged." };
+    }
+    const paid = recent.filter((n) => n > 0).length;
+    const latest = recent[recent.length - 1];
+    if (paid === recent.length && latest > 0) {
+      return { flag: "GREEN", reason: `Consistent dividend payout — paid in all of the last ${recent.length} years (latest ${Math.round(latest)}%).` };
+    }
+    if (paid === 0) {
+      return { flag: "NEUTRAL", reason: `No dividend in the last ${recent.length} years — fine if reinvesting for growth, but no cash returned to minorities.` };
+    }
+    return { flag: "NEUTRAL", reason: `Erratic dividend payout — paid in ${paid} of the last ${recent.length} years (latest ${Math.round(latest)}%).` };
   },
 };
 

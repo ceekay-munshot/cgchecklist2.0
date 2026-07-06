@@ -62,12 +62,16 @@ export type ComputedNumericKind =
   | "taxRate" // effective tax rate (P&L Tax %)
   | "receivableDaysProxy" // debtor days (DSO) — proxy for >6-month ageing
   | "cashEpsRatio" // (PAT + Depreciation) ÷ PAT — cash vs accounting EPS
+  | "otherIncomePctPbt" // Other income ÷ PBT — earnings propped by non-operating income
   | "freeFloat"; // 100 − promoter holding %
 
 /** A Tier-1 structured field to read from the SCREENER_PAGE structuredData. */
 export type ScreenerField =
   | { kind: "ratio"; match: RegExp; label: string }
   | { kind: "shareholding"; series: "promoters" | "pledged"; label: string }
+  // A whole ROW read as a multi-year series (e.g. Working Capital Days, Dividend
+  // Payout %) — the item is then judged on the TREND, deterministically.
+  | { kind: "seriesRow"; match: RegExp; label: string }
   | { kind: ComputedNumericKind; label: string };
 
 export interface EvidenceStrategy {
@@ -147,6 +151,11 @@ export interface Analysis {
    * Optional: numeric/deterministic extractors leave it unset.
    */
   rationale?: string;
+  /**
+   * The multi-year series behind a Tier-1 trend item (e.g. Working Capital Days,
+   * Dividend Payout %), so the flag engine can judge the TREND deterministically.
+   */
+  series?: { periods: string[]; values: Array<string | null> };
   evidenceQuote?: string;
   citation?: EvidenceCitation;
   confidence: Confidence;

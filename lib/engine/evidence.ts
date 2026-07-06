@@ -2,7 +2,7 @@ import type { Company, SourceDoc, SourceDocType } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
-import { computeNumeric, findRatio, getShareholdingSeries } from "./numeric";
+import { computeNumeric, findRatio, findSeriesRow, getShareholdingSeries } from "./numeric";
 import { companyScaleFrom, type CompanyScale } from "./materiality";
 import {
   kindOf,
@@ -35,6 +35,10 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
   "A8-10": { from: "screener", screenerFields: [{ kind: "taxRate", label: "Effective tax rate" }] },
   "A8-03": { from: "screener", screenerFields: [{ kind: "receivableDaysProxy", label: "Debtor days" }] },
   "A8-11": { from: "screener", screenerFields: [{ kind: "cashEpsRatio", label: "Cash EPS / EPS" }] },
+  // Screener wins (Tier-1, deterministic) — previously fell through to docs/MUNS:
+  "A8-02": { from: "screener", screenerFields: [{ kind: "seriesRow", match: /working capital days/i, label: "Working capital days" }] },
+  "A8-05": { from: "screener", screenerFields: [{ kind: "otherIncomePctPbt", label: "Other income % of PBT" }] },
+  "A10-01": { from: "screener", screenerFields: [{ kind: "seriesRow", match: /dividend payout/i, label: "Dividend payout %" }] },
   // Numeric-from-document (keyword retrieval — already validated correct)
   "A1-01": {
     from: "document",
@@ -396,6 +400,14 @@ async function getScreenerEvidence(
         const latest = latestNonNull(s.values);
         if (latest != null) structured[field.label] = latest;
         series = { label: field.label, periods: s.periods, values: s.values };
+      }
+    } else if (field.kind === "seriesRow") {
+      // A whole financial-table row read as a multi-year series (trend items).
+      const row = findSeriesRow(data, field.match);
+      if (row) {
+        const latest = latestNonNull(row.values);
+        if (latest != null) structured[field.label] = latest;
+        series = { label: field.label, periods: row.periods, values: row.values };
       }
     } else {
       // computed-from-financials numeric kind

@@ -133,6 +133,8 @@ function analyzeScreener(evidence: Evidence): Analysis {
       .join(", ");
     return {
       value: `${latest} (${trend})`,
+      // Carry the full series so a trend classifier (CUSTOM_SERIES) can judge it.
+      series: { periods: evidence.series.periods, values: evidence.series.values },
       evidenceQuote: `${label} — ${compact}`,
       citation: evidence.citation,
       confidence: "high",
