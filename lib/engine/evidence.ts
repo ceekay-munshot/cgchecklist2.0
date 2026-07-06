@@ -192,8 +192,16 @@ const SECTION_PROFILE: Record<
     keywords: ["remuneration", "commission", "variable pay", "performance linked", "perquisites", "sitting fees"],
   },
   A7a: {
-    sections: ["contingent liabilities and commitments", "contingent liabilities", "commitments"],
-    keywords: ["contingent", "guarantee", "claims not acknowledged as debt", "commitments", "disputed", "demand"],
+    sections: [
+      "contingent liabilities and commitments",
+      "commitments and contingencies",
+      "contingent liabilities",
+      "claims against the company not acknowledged as debt",
+      "contingencies",
+      "contingent liability",
+      "commitments",
+    ],
+    keywords: ["contingent", "guarantee", "claims not acknowledged as debt", "commitments", "contingencies", "disputed", "demand", "litigation"],
     useGeminiNote: true, // table-heavy CL note — Gemini reads the figures
   },
   A8: {
@@ -459,8 +467,10 @@ const MAX_EVIDENCE_CHARS = 6500;
 const PER_PASSAGE_CHARS = 1800;
 const SECTION_CHARS = 4500; // window extracted for a located note/section
 // Gemini note reading gets a larger window so the whole table is visible.
-const NOTE_BUDGET_CHARS = 14_000;
-const NOTE_SECTION_CHARS = 7000;
+// Note windows are generous so a full table-heavy note (all its sub-categories)
+// reaches the model — a truncated CL note would drop sub-items to a false NA.
+const NOTE_BUDGET_CHARS = 18_000;
+const NOTE_SECTION_CHARS = 9000;
 
 async function getDocumentEvidence(
   runId: string,

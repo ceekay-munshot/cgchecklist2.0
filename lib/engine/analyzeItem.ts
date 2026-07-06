@@ -413,6 +413,17 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
   const passages = evidence.passages ?? [];
   if (!passages.length) return NA;
 
+  // A contingent-liabilities/commitments note lists every category that applies,
+  // so a category that ISN'T listed means the company has none — a real nil, not
+  // a data gap. (Zero exposure then reads GREEN downstream.)
+  const isContingency = item.sectionCode === "A7a";
+  const absenceClause = isContingency
+    ? `A contingent-liabilities/commitments note lists EVERY category that applies. ` +
+      `If the note is present but THIS specific category (per the title above) is NOT ` +
+      `listed, the company has NO such exposure — set "found" to true and "value" to ` +
+      `"Nil" (₹0). Only set "found" to false if the note itself is absent/unreadable.`
+    : `If relevant but THIS item's figure isn't present, set "found" to false.`;
+
   const prompt =
     `You are reading the "${noteNameFor(item)}" note from an annual report. PDF tables ` +
     `are often flattened into messy text — reconstruct the figures carefully.\n` +
@@ -424,9 +435,9 @@ async function analyzeNote(item: EngineItem, evidence: Evidence): Promise<Analys
     `Prefer the most recent year. ${RATIONALE_INSTRUCTION}` +
     `The "rationale" must quote the actual Rs-crore figures (and the comparative year ` +
     `if shown) and note the trend. RELEVANCE: set "relevant" to false ONLY if these ` +
-    `excerpts are clearly a different note. If relevant but THIS item's figure isn't ` +
-    `present, set "found" to false. Set "confident" to false if the figures are unclear/` +
-    `partial. Put the exact supporting line in "evidenceQuote" and its page in "page".\n\n` +
+    `excerpts are clearly a different note. ${absenceClause} Set "confident" to false if ` +
+    `the figures are unclear/partial. Put the exact supporting line in "evidenceQuote" ` +
+    `and its page in "page".\n\n` +
     passagesBlock(passages);
 
   // Gemini (longContext) is best at reconstructing flattened tables; the quota
