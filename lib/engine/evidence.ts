@@ -38,7 +38,14 @@ const STRATEGY_BY_ID: Record<string, EvidenceStrategy> = {
   // Screener wins (Tier-1, deterministic) — previously fell through to docs/MUNS:
   "A8-02": { from: "screener", screenerFields: [{ kind: "seriesRow", match: /working capital days/i, label: "Working capital days" }] },
   "A8-05": { from: "screener", screenerFields: [{ kind: "otherIncomePctPbt", label: "Other income % of PBT" }] },
-  "A10-01": { from: "screener", screenerFields: [{ kind: "seriesRow", match: /dividend payout/i, label: "Dividend payout %" }] },
+  "A10-01": {
+    from: "screener",
+    screenerFields: [{ kind: "seriesRow", match: /dividend payout/i, label: "Dividend payout %" }],
+    // Filing fallback if Screener has no payout row — the AR discloses dividends.
+    docTypes: ["ANNUAL_REPORT"],
+    sections: ["dividend distribution policy", "dividend", "directors' report"],
+    keywords: ["dividend", "payout", "per equity share", "final dividend", "interim dividend", "dividend declared"],
+  },
   // Numeric-from-document (keyword retrieval — already validated correct)
   "A1-01": {
     from: "document",
@@ -303,7 +310,15 @@ export async function getEvidence(item: EngineItem, runId: string): Promise<Evid
   const strategy = evidenceStrategyFor(item);
 
   if (strategy.from === "screener") {
-    return getScreenerEvidence(runId, strategy, kind);
+    const s = await getScreenerEvidence(runId, strategy, kind);
+    if (s.status === "found") return s;
+    // Screener didn't carry the row/field → fall back to the filing when the
+    // strategy configured one (so a missing Screener label doesn't blank the item).
+    if (strategy.sections?.length || strategy.keywords?.length) {
+      const doc = await getDocumentEvidence(runId, strategy, kind);
+      if (doc.status === "found") return doc;
+    }
+    return s;
   }
 
   // Web-PRIMARY items (designated web/market-data: promoter vintage/family/
