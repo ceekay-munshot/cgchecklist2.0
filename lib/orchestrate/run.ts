@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { evaluateItem } from "@/lib/engine/evaluateItem";
 import { fromPrismaItem } from "@/lib/engine/types";
 import { QuotaExhaustedError } from "@/lib/engine/quota";
+import { ensureUnlistedFinancials } from "./unlistedTier1";
 
 /**
  * Concurrency for per-item evaluation. Default 2 keeps the request rate under
@@ -185,6 +186,16 @@ export async function runAnalysis(
 ): Promise<RunOutcome> {
   const run = await prisma.analysisRun.findUnique({ where: { id: runId } });
   if (!run) throw new Error(`run ${runId} not found`);
+
+  // UNLISTED runs have no Screener page: synthesise the Tier-1 structuredData blob
+  // from the uploaded financial statements (idempotent — skipped once it exists) so
+  // the numeric + materiality items work. A quota exhaustion here just leaves Tier-1
+  // absent for this pass; a later resume builds it.
+  try {
+    await ensureUnlistedFinancials(runId);
+  } catch (e) {
+    if (!(e instanceof QuotaExhaustedError)) throw e;
+  }
 
   const [items, sections, existing] = await Promise.all([
     prisma.checklistItem.findMany({ orderBy: [{ sectionCode: "asc" }, { orderIndex: "asc" }] }),

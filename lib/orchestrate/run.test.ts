@@ -36,7 +36,11 @@ const SECTIONS = [{ code: "A1", name: "Board", orderIndex: 0 }];
 
 beforeEach(() => {
   vi.clearAllMocks();
-  asMock(prisma.analysisRun.findUnique).mockResolvedValue({ id: "run1" });
+  // A listed-style run (has a ticker) → the unlisted Tier-1 pre-step is a no-op.
+  asMock(prisma.analysisRun.findUnique).mockResolvedValue({
+    id: "run1",
+    company: { ticker: "TCS", name: "TCS" },
+  });
   asMock(prisma.analysisRun.update).mockResolvedValue({});
   asMock(prisma.checklistSection.findMany).mockResolvedValue(SECTIONS);
   asMock(prisma.itemResult.upsert).mockResolvedValue({});
