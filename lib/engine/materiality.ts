@@ -75,7 +75,7 @@ export const MATERIALITY_GUARD_ITEMS = new Set<string>([
   "A7a-15", // unhedged forex/derivative (%)
   "A5-05", // arm's-length assertion (Yes/No)
   "A5-06", // minority dissent on RPTs (% against)
-  "A8-06", // goodwill build-up & impairment — a tiny impairment (₹cr) is not a red
+  // A8-06 goodwill impairment is now decided deterministically (CATEGORICAL_RULES).
 ]);
 /** Below this % of net worth, a cited amount is treated as immaterial by the guard. */
 const GUARD_IMMATERIAL_PCT = 10;
@@ -401,6 +401,33 @@ export function chairmanMdSeparationFlag(value: string, evidenceQuote: string | 
   return { flag: "NEUTRAL", reason: `Chairman–MD separation not clearly established (${value}).` };
 }
 
+/**
+ * A8-06 Goodwill build-up & impairment. RED = a real goodwill IMPAIRMENT (an
+ * existing asset written down). A frequent misread turns the cash-flow "purchase
+ * of fixed/intangible assets" line (capital expenditure — an investing OUTFLOW, i.e.
+ * the company BOUGHT assets) into a "goodwill impairment", firing a false red on a
+ * company that has no goodwill at all. Decide on the EVIDENCE, not the extractor's
+ * label: a purchase/addition is never an impairment; a red needs impairment wording.
+ */
+export function goodwillImpairmentFlag(value: string, evidenceQuote: string | null | undefined): MaterialityResult {
+  const ev = (evidenceQuote ?? "").toLowerCase();
+  const both = `${value} ${ev}`.toLowerCase();
+  if (statesNil(both) || /\bno goodwill\b|goodwill[^.]{0,20}\b(nil|none|no impair)/.test(both)) {
+    return { flag: "GREEN", reason: `No goodwill / no impairment reported (${value}).` };
+  }
+  // A PURCHASE / addition of fixed or intangible assets is capex, not an impairment.
+  const purchase = /\b(purchas|addition|acquir|bought|capital expenditure|capex|invest(?:ing|ment) in)/.test(ev);
+  // A genuine impairment must be EVIDENCED (not merely the extractor's headline).
+  const impaired = /\bimpair/.test(ev) || /\b(written|write)[ -]?(down|off)\b/.test(ev);
+  if (purchase && !impaired) {
+    return { flag: "GREEN", reason: `The figure is a purchase/addition of assets (capital expenditure), not a goodwill impairment — no impairment identified (${value}).` };
+  }
+  if (impaired && /goodwill/.test(ev)) {
+    return { flag: "RED", reason: `Goodwill impairment identified in the accounts (${value}).` };
+  }
+  return { flag: "NEUTRAL", reason: `No clear goodwill impairment identified (${value}).` };
+}
+
 export const CATEGORICAL_RULES: Record<
   string,
   (value: string, evidenceQuote: string | null | undefined) => MaterialityResult
@@ -409,4 +436,5 @@ export const CATEGORICAL_RULES: Record<
   "A2-01": auditCommitteeFlag,
   "A3-05": cheapInsiderEquityFlag,
   "A4-05": auditOpinionFlag,
+  "A8-06": goodwillImpairmentFlag,
 };

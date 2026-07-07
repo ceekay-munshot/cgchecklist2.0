@@ -9,6 +9,7 @@ import {
   classifyAmount,
   companyScaleFrom,
   extractAmountCr,
+  goodwillImpairmentFlag,
   guardAmount,
   isPlausibleAmount,
   parseIndependenceRatio,
@@ -192,6 +193,25 @@ describe("cheapInsiderEquityFlag (A3-05) — only a real promoter discount is a 
     ]) {
       expect(cheapInsiderEquityFlag(t, null).flag).toBe("GREEN");
     }
+  });
+});
+
+describe("goodwillImpairmentFlag (A8-06) — capex is not an impairment", () => {
+  it("is registered as the deterministic A8-06 categorical rule", () => {
+    expect(CATEGORICAL_RULES["A8-06"]).toBe(goodwillImpairmentFlag);
+  });
+  it("does NOT red a PURCHASE of intangible/fixed assets (the Nora false positive)", () => {
+    const v = "Goodwill impairment ₹27,71,70,928 (FY2025-26)";
+    const ev = "Fixed Assets purchased including Intangible Assets -₹27,71,70,928 (cash flow, investing)";
+    expect(goodwillImpairmentFlag(v, ev).flag).toBe("GREEN");
+  });
+  it("REDs a genuine, evidenced goodwill impairment", () => {
+    expect(
+      goodwillImpairmentFlag("Goodwill impaired", "Goodwill impairment of ₹120 crore recognised in the year").flag,
+    ).toBe("RED");
+  });
+  it("GREENs a nil / no-goodwill disclosure", () => {
+    expect(goodwillImpairmentFlag("Nil", "The company carries no goodwill").flag).toBe("GREEN");
   });
 });
 

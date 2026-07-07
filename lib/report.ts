@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { isCommitted, summarize } from "@/lib/orchestrate";
 import type { RunSummary } from "@/lib/orchestrate";
 import { parseTable, type DataTable } from "@/lib/engine/types";
-import { LISTED_ONLY_NA_VERDICT } from "@/lib/engine/applicability";
+import { isListedOnlyItem, LISTED_ONLY_NA_VERDICT } from "@/lib/engine/applicability";
 
 /**
  * Read models for the report UI + exporters. One place loads a company's latest
@@ -137,29 +137,38 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
   const byId = new Map(results.map((r) => [r.itemId, r]));
   const docById = new Map(docs.map((d) => [d.id, d]));
 
+  // Applicability is AUTHORITATIVE at read time: a listed-only item on an unlisted
+  // company is "not applicable" regardless of any flag a prior pass may have stored
+  // (a run that spanned a deploy, or was evaluated before the gate existed, can
+  // otherwise show a stale NEUTRAL/GREEN on a structurally-inapplicable item).
+  const unlisted = !run.company.ticker;
+  const forcedNA = (id: string) => unlisted && isListedOnlyItem(id);
+
   const reportSections: ReportSection[] = sections.map((s) => {
     const secItems: ReportItem[] = items
       .filter((it) => it.sectionCode === s.code)
       .map((it) => {
         const r = byId.get(it.id);
         const committed = isCommitted(r?.status);
+        const na = forcedNA(it.id);
         return {
           id: it.id,
           item: it.item,
           description: it.description,
           outputFormat: it.outputFormat,
           sectionCode: it.sectionCode,
-          status: r?.status ?? "PENDING",
-          flag: (committed ? (r?.flag ?? null) : null) as FlagName | null,
-          staleFlag: (!committed && r?.flag ? r.flag : null) as FlagName | null,
-          naKind:
-            committed && r?.flag === NA
+          status: na ? "DONE" : (r?.status ?? "PENDING"),
+          flag: (na ? NA : committed ? (r?.flag ?? null) : null) as FlagName | null,
+          staleFlag: (!na && !committed && r?.flag ? r.flag : null) as FlagName | null,
+          naKind: na
+            ? "not_applicable"
+            : committed && r?.flag === NA
               ? r?.verdict === LISTED_ONLY_NA_VERDICT
                 ? "not_applicable"
                 : "no_data"
               : null,
-          value: r?.value ?? null,
-          verdict: r?.verdict ?? null,
+          value: na ? "not applicable" : (r?.value ?? null),
+          verdict: na ? LISTED_ONLY_NA_VERDICT : (r?.verdict ?? null),
           confidence: r?.confidence ?? null,
           provider: r?.providerUsed ?? null,
           isNonNegotiable: r?.isNonNegotiable ?? it.isNonNegotiable,
@@ -186,7 +195,12 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
   const summary = summarize(
     items.map((it) => ({ id: it.id, sectionCode: it.sectionCode, isNonNegotiable: it.isNonNegotiable })),
     sections.map((s) => ({ code: s.code, name: s.name })),
-    results.map((r) => ({ itemId: r.itemId, status: r.status, flag: r.flag })),
+    // Apply the same applicability override to the tally so the KPIs match the rows.
+    items.map((it) => {
+      if (forcedNA(it.id)) return { itemId: it.id, status: "DONE", flag: NA };
+      const r = byId.get(it.id);
+      return { itemId: it.id, status: r?.status ?? "PENDING", flag: r?.flag ?? null };
+    }),
   );
 
   return {
