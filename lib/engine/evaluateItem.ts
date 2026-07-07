@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { getEvidence, evidenceStrategyFor, loadCompanyScale, isUnlistedRun } from "./evidence";
 import { analyzeItem } from "./analyzeItem";
 import { assignFlag } from "./flag";
-import { isListedOnlyItem } from "./applicability";
+import { isListedOnlyItem, LISTED_ONLY_NA_VERDICT } from "./applicability";
 import { QuotaExhaustedError } from "./quota";
 import {
   kindOf,
@@ -88,7 +88,7 @@ export async function evaluateItem(item: EngineItem, runId: string): Promise<Ite
         item: item.item,
         kind,
         flag: "NOT_AVAILABLE",
-        verdict: "Not applicable — this is a listed-company / market disclosure; the company is unlisted.",
+        verdict: LISTED_ONLY_NA_VERDICT,
         value: "not applicable",
         confidence: "high",
         isNonNegotiable: item.isNonNegotiable,

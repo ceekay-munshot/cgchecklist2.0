@@ -52,6 +52,26 @@ export function ReportView({ report }: { report: CompanyReport }) {
 
   const distTotal = Math.max(1, totals.green + totals.red + totals.neutral + totals.na);
 
+  // Split the N/A bucket so the reader sees WHY items are blank: structurally
+  // "not applicable" (a listed-only item on a private company) vs a genuine
+  // "no data" gap in the available sources.
+  const naSplit = useMemo(() => {
+    let notApplicable = 0;
+    let noData = 0;
+    for (const s of report.sections) {
+      for (const it of s.items) {
+        if ((it.flag ?? null) !== "NOT_AVAILABLE") continue;
+        if (it.naKind === "not_applicable") notApplicable++;
+        else noData++;
+      }
+    }
+    return { notApplicable, noData };
+  }, [report.sections]);
+  const naSub =
+    naSplit.notApplicable > 0
+      ? `${naSplit.notApplicable} n/a · ${naSplit.noData} no data`
+      : undefined;
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       <Link href="/" className="text-sm font-medium text-slate-400 transition hover:text-slate-700">
@@ -102,7 +122,7 @@ export function ReportView({ report }: { report: CompanyReport }) {
           <Kpi emoji="🟢" label="Green" value={totals.green} tint="text-emerald-600" />
           <Kpi emoji="🔴" label="Red" value={totals.red} tint="text-rose-600" />
           <Kpi emoji="⚪" label="Neutral" value={totals.neutral} tint="text-amber-600" />
-          <Kpi emoji="▫️" label="N/A" value={totals.na} tint="text-slate-400" />
+          <Kpi emoji="▫️" label="N/A" value={totals.na} tint="text-slate-400" sub={naSub} />
           <Kpi emoji="✅" label="Answered" value={`${report.answered}/${report.total}`} tint="text-indigo-600" />
           <div className="grid place-items-center bg-white px-4 py-4">
             {gatePass === null ? (
@@ -310,6 +330,22 @@ const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
           {stale && (
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">stale</span>
           )}
+          {it.naKind === "not_applicable" && (
+            <span
+              title="This is a listed-company / market disclosure — it does not apply to an unlisted company."
+              className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 ring-1 ring-slate-200"
+            >
+              not applicable
+            </span>
+          )}
+          {it.naKind === "no_data" && (
+            <span
+              title="Couldn't be answered from the available documents or web sources."
+              className="rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 ring-1 ring-slate-200"
+            >
+              no data
+            </span>
+          )}
         </div>
         {detail && <p className="mt-1 text-sm leading-relaxed text-slate-600">{detail}</p>}
         {it.evidenceQuote && (
@@ -429,13 +465,14 @@ function Confidence({ v }: { v: number | null }) {
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${cls}`}>{label}</span>;
 }
 
-function Kpi({ emoji, label, value, tint }: { emoji: string; label: string; value: number | string; tint: string }) {
+function Kpi({ emoji, label, value, tint, sub }: { emoji: string; label: string; value: number | string; tint: string; sub?: string }) {
   return (
     <div className="bg-white px-4 py-4 text-center">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
         {emoji} {label}
       </div>
       <div className={`mt-0.5 text-2xl font-bold tabular-nums ${tint}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[10px] font-medium leading-tight text-slate-400">{sub}</div>}
     </div>
   );
 }

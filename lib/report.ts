@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { isCommitted, summarize } from "@/lib/orchestrate";
 import type { RunSummary } from "@/lib/orchestrate";
 import { parseTable, type DataTable } from "@/lib/engine/types";
+import { LISTED_ONLY_NA_VERDICT } from "@/lib/engine/applicability";
 
 /**
  * Read models for the report UI + exporters. One place loads a company's latest
@@ -21,6 +22,12 @@ export interface ReportItem {
   status: string;
   flag: FlagName | null; // committed-only
   staleFlag: FlagName | null; // leftover flag on a non-terminal item
+  /**
+   * For a NOT_AVAILABLE flag, WHY it's blank:
+   *   - "not_applicable": a listed-only item on an unlisted company (by design)
+   *   - "no_data": genuinely couldn't be answered from the available sources
+   */
+  naKind: "not_applicable" | "no_data" | null;
   value: string | null;
   verdict: string | null;
   confidence: number | null;
@@ -145,6 +152,12 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
           status: r?.status ?? "PENDING",
           flag: (committed ? (r?.flag ?? null) : null) as FlagName | null,
           staleFlag: (!committed && r?.flag ? r.flag : null) as FlagName | null,
+          naKind:
+            committed && r?.flag === NA
+              ? r?.verdict === LISTED_ONLY_NA_VERDICT
+                ? "not_applicable"
+                : "no_data"
+              : null,
           value: r?.value ?? null,
           verdict: r?.verdict ?? null,
           confidence: r?.confidence ?? null,

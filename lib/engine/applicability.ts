@@ -62,3 +62,11 @@ export const LISTED_ONLY_ITEMS = new Set<string>([
 export function isListedOnlyItem(itemId: string): boolean {
   return LISTED_ONLY_ITEMS.has(itemId);
 }
+
+/**
+ * The exact verdict written for a listed-only item on an unlisted run. Shared by
+ * the evaluator (writer) and the report layer (reader) so an N/A can be classified
+ * as "not applicable" vs a genuine "no data" data-gap without a DB migration.
+ */
+export const LISTED_ONLY_NA_VERDICT =
+  "Not applicable — this is a listed-company / market disclosure; the company is unlisted.";

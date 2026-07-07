@@ -187,7 +187,10 @@ function checklistSheet(wb: ExcelJS.Workbook, r: CompanyReport) {
       const rowObj = ws.getRow(row);
       rowObj.getCell(1).value = it.id;
       rowObj.getCell(2).value = it.item;
-      rowObj.getCell(3).value = m.label;
+      // Split the N/A label so the reader sees WHY it's blank: structurally not
+      // applicable (a listed-only item on a private company) vs a real data gap.
+      rowObj.getCell(3).value =
+        it.naKind === "not_applicable" ? "N/A (n/a)" : it.naKind === "no_data" ? "N/A (no data)" : m.label;
       rowObj.getCell(4).value = it.value && it.value.toLowerCase() !== "not available" ? it.value : "—";
       rowObj.getCell(5).value = it.verdict ?? "—";
       rowObj.getCell(6).value = confLabel(it.confidence);
