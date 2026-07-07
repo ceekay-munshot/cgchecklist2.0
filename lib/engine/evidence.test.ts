@@ -11,7 +11,7 @@ vi.mock("@/lib/scrape", () => ({
   webResearcher: { search: vi.fn(), fetchUrl: vi.fn() },
 }));
 
-import { buildWebQuery, evidenceStrategyFor, getEvidence } from "./evidence";
+import { buildWebQuery, evidenceStrategyFor, getEvidence, webHitRelevant } from "./evidence";
 import type { Company } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
@@ -52,6 +52,21 @@ describe("buildWebQuery — anchor web research to the Indian listed company", (
   });
   it("falls back to the bare topic when there is no company", () => {
     expect(buildWebQuery(null, "promoter background")).toBe("promoter background");
+  });
+});
+
+describe("webHitRelevant — reject namesake web hits for private companies", () => {
+  it("PRIVATE company (no ticker): requires the FULL registered name as a phrase", () => {
+    const nora = company({ name: "Nora Enterprises", ticker: null });
+    // The real bug: "nora" matched "De Nora India" — must now be rejected.
+    expect(webHitRelevant("De Nora India Ltd sells electrodes", nora)).toBe(false);
+    expect(webHitRelevant("Sunteck Realty board of directors", nora)).toBe(false);
+    // A genuine hit that names the company survives.
+    expect(webHitRelevant("Nora Enterprises Chennai — vending FMCG", nora)).toBe(true);
+  });
+  it("LISTED company (has ticker): a distinctive-token match is enough", () => {
+    const trent = company({ name: "Trent Limited", ticker: "TRENT" });
+    expect(webHitRelevant("Trent posts record quarter on Zudio growth", trent)).toBe(true);
   });
 });
 

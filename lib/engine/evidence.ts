@@ -832,6 +832,29 @@ function mentionsCompany(hay: string, tokens: string[]): boolean {
   return tokens.some((t) => h.includes(t));
 }
 
+/** Collapse to lowercase alphanumerics-separated-by-single-spaces for phrase matching. */
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * Is a web hit really about THIS company? For a LISTED company (has a ticker,
+ * strong web presence) a distinctive-token match is enough. For a PRIVATE/UNLISTED
+ * company the web presence is weak and ambiguous, so a single common token slips
+ * in a namesake ("Nora Enterprises" → "De Nora India"); there we require the FULL
+ * registered name to appear as a contiguous phrase. Pure + exported for testing.
+ */
+export function webHitRelevant(hayText: string, company: Company | null): boolean {
+  const hay = normalizeForMatch(hayText);
+  const fullName = normalizeForMatch(company?.name ?? "");
+  if (!company?.ticker && fullName) {
+    // Private company: demand the whole registered name, so a shared word can't
+    // pull in a differently-named entity.
+    return hay.includes(fullName);
+  }
+  return mentionsCompany(hay, companyTokens(company));
+}
+
 /**
  * Build a web-research query anchored to THIS Indian listed company. A bare
  * ticker/short name ("Trent") collides with same-named foreign entities ("Severn
@@ -868,9 +891,8 @@ async function getWebEvidence(
     // Keep only results that actually mention THIS company — drops the off-topic
     // search noise (e.g. an Instagram post about a different company, a generic
     // HR blog) that otherwise yields confidently-wrong web verdicts.
-    const tokens = companyTokens(company);
     const relevant = res.results.filter(
-      (h) => !isBlockedHost(h.url) && mentionsCompany(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, tokens),
+      (h) => !isBlockedHost(h.url) && webHitRelevant(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, company),
     );
     let passages: EvidencePassage[] = relevant.slice(0, 3).map((h) => ({
       text: [h.title, h.snippet].filter(Boolean).join(" — ").trim(),
