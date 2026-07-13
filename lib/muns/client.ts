@@ -65,43 +65,40 @@ export function defaultDateWindow(now: Date = new Date()): { fromDate: string; t
 }
 
 /**
- * Checklist items whose question is a LIFETIME-record one: a promoter's track
- * record and other ventures, the company's regulatory / legal / integrity history,
- * and reputation (CEO, audit-firm calibre, restatement history). A trailing 2-year
- * window structurally HIDES exactly what these ask about — the AFCOM promoter's
- * pre-2024 collapsed business was invisible because the search only looked back two
- * years. These get a wide historical lookback instead. (The whole A9 Regulatory/
- * Legal/Integrity and A13 Management & Promoter Quality sections are lifetime by
- * nature.) Everything else keeps the recent-news window.
+ * The extended historical window is the DEFAULT: almost every governance question
+ * is a track-record / history one (a promoter's past conduct, litigation,
+ * resignations, mergers, multi-year trends, reputation) where a trailing 2-year
+ * window structurally HIDES exactly what it asks about — the AFCOM promoter's
+ * pre-2024 collapsed business was invisible because the search only looked back
+ * two years. So we look back DECADES by default and keep the short window ONLY for
+ * items that are inherently about the CURRENT market state: stock volatility,
+ * traded volume / liquidity, and live analyst coverage (all of section A15). For
+ * those, "recent" is the correct question; for everything else, older facts matter.
  */
-const LIFETIME_SECTIONS = new Set(["A9", "A13"]);
-const LIFETIME_ITEMS = new Set([
-  "A1-05", // director reputation
-  "A4-02", // audit-firm calibre / standing
-  "A7-02", // restatement frequency (history)
-  "A3-01", // promoter holding trend (multi-year)
-]);
+const RECENCY_SECTIONS = new Set(["A15"]);
+const RECENCY_ITEMS = new Set<string>([]);
 
-/** Is this a lifetime-record item (wide lookback) vs a recent-news one? */
-export function isLifetimeItem(itemId: string, sectionCode: string): boolean {
-  return LIFETIME_SECTIONS.has(sectionCode) || LIFETIME_ITEMS.has(itemId);
+/** Inherently CURRENT market-state item (short window) vs a track-record one (wide)? */
+export function isRecencyItem(itemId: string, sectionCode: string): boolean {
+  return RECENCY_SECTIONS.has(sectionCode) || RECENCY_ITEMS.has(itemId);
 }
 
 /**
- * The search date window for a specific checklist item. Lifetime-record items get
- * a long lookback (default 25y, `MUNS_HISTORY_LOOKBACK_YEARS`); everything else
- * keeps the recent-news window (default 2y, `MUNS_LOOKBACK_YEARS`). `toDate` is
- * always today, so a wide window never loses recent data — it only ADDS history.
+ * The search date window for a specific checklist item. Track-record / history
+ * items (the DEFAULT) get a long lookback (default 25y, `MUNS_HISTORY_LOOKBACK_YEARS`);
+ * only inherently-current market-state items keep the short window (default 2y,
+ * `MUNS_LOOKBACK_YEARS`). `toDate` is always today, so a wide window never loses
+ * recent data — it only ADDS history.
  */
 export function dateWindowForItem(
   itemId: string,
   sectionCode: string,
   now: Date = new Date(),
 ): { fromDate: string; toDate: string } {
-  if (isLifetimeItem(itemId, sectionCode)) {
-    return windowYears(Number(process.env.MUNS_HISTORY_LOOKBACK_YEARS) || 25, now);
+  if (isRecencyItem(itemId, sectionCode)) {
+    return windowYears(Number(process.env.MUNS_LOOKBACK_YEARS) || 2, now);
   }
-  return windowYears(Number(process.env.MUNS_LOOKBACK_YEARS) || 2, now);
+  return windowYears(Number(process.env.MUNS_HISTORY_LOOKBACK_YEARS) || 25, now);
 }
 
 export async function munsCall(args: MunsCallArgs): Promise<MunsCallResult> {
