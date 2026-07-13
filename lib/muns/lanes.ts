@@ -71,9 +71,9 @@ async function runLane(
         indexInSection: i,
         text: p.text,
       });
-      // Per-item search window: lifetime-record items (promoter track record,
-      // legal/integrity, reputation) look back decades; recent-news items stay
-      // on the short window. Overrides the run-level default for this call only.
+      // Per-item search window: track-record / history items (the default) look
+      // back decades so past conduct surfaces; only current-market items (A15) keep
+      // the short window. Overrides the run-level default for this call only.
       const itemCtx: MunsQueryContext = { ...ctx, ...dateWindowForItem(p.id, p.sectionCode) };
       const res = await munsCall({
         env,
