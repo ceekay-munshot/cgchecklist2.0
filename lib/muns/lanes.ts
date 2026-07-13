@@ -42,6 +42,8 @@ export interface LaneAnswer {
   id: string;
   answer: string;
   ok: boolean;
+  /** Source URLs harvested from the MUNS citations for this parameter. */
+  sources: string[];
 }
 
 /** Run a single lane sequentially (history depends on the prior turn). */
@@ -80,7 +82,7 @@ async function runLane(
         chatId,
         chatHistory: [...megaHistory, ...sectionHistory],
       });
-      out.push({ id: p.id, answer: res.answer, ok: res.ok });
+      out.push({ id: p.id, answer: res.answer, ok: res.ok, sources: res.sources });
       onProgress?.(p.id, res.ok);
       // On failure record "[Error]" and continue (never abort the lane).
       sectionHistory.push("User: " + task, "AI: " + (res.ok ? res.answer : "[Error]"));

@@ -1,4 +1,4 @@
-import { parseAnswer } from "./prompts";
+import { parseAnswer, extractSourceUrls } from "./prompts";
 
 /**
  * Thin MUNS Chat API client. ONE POST per turn; the session id comes from the
@@ -33,6 +33,8 @@ export interface MunsCallArgs {
 export interface MunsCallResult {
   ok: boolean;
   answer: string;
+  /** Source URLs harvested from the raw MUNS body (citations) — for the item's source. */
+  sources: string[];
   chatId?: string;
   status: number;
   error?: string;
@@ -143,18 +145,20 @@ export async function munsCall(args: MunsCallArgs): Promise<MunsCallResult> {
     const text = await res.text();
     const newChatId = res.headers.get("x-chat-id") ?? chatId;
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, answer: "[Error] MUNS auth failed (bad/expired token)", chatId: newChatId, status: res.status, error: "auth" };
+      return { ok: false, answer: "[Error] MUNS auth failed (bad/expired token)", sources: [], chatId: newChatId, status: res.status, error: "auth" };
     }
     if (!res.ok) {
-      return { ok: false, answer: `[Error] MUNS HTTP ${res.status}`, chatId: newChatId, status: res.status, error: text.slice(0, 200) };
+      return { ok: false, answer: `[Error] MUNS HTTP ${res.status}`, sources: [], chatId: newChatId, status: res.status, error: text.slice(0, 200) };
     }
     const answer = parseAnswer(text);
     if (!answer) {
-      return { ok: false, answer: "[Error] MUNS returned no parseable answer", chatId: newChatId, status: res.status, error: "empty" };
+      return { ok: false, answer: "[Error] MUNS returned no parseable answer", sources: [], chatId: newChatId, status: res.status, error: "empty" };
     }
-    return { ok: true, answer, chatId: newChatId, status: res.status };
+    // Harvest citation URLs from the RAW body before cleanup() strips them — this
+    // is the item's source ("source per line item"). Empty when none present.
+    return { ok: true, answer, sources: extractSourceUrls(text), chatId: newChatId, status: res.status };
   } catch (e) {
-    return { ok: false, answer: `[Error] ${(e as Error).message}`, chatId, status: 0, error: (e as Error).message };
+    return { ok: false, answer: `[Error] ${(e as Error).message}`, sources: [], chatId, status: 0, error: (e as Error).message };
   } finally {
     clearTimeout(timer);
   }
