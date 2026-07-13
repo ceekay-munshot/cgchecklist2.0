@@ -183,7 +183,7 @@ export function ReportView({ report }: { report: CompanyReport }) {
       </div>
 
       <p className="mt-8 text-center text-xs text-slate-400">
-        Flags only — no numeric scoring. Web-sourced verdicts are low-confidence and never fire a red.
+        Flags only — no numeric scoring. Web-sourced verdicts are marked low-confidence and cross-checked — corroborate before acting.
       </p>
       {overlay}
     </div>

@@ -68,15 +68,31 @@ describe("assignFlag", () => {
     expect(asMock(llm.reasoning.completeJSON)).not.toHaveBeenCalled();
   });
 
-  it("never fires a RED from web-sourced evidence (downgrades to NEUTRAL)", async () => {
-    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "A news snippet alleges a problem." });
+  it("allows a web-sourced RED to STAND when a second model confirms it, tagged web/low-confidence", async () => {
+    // Promoter-track-record-elsewhere lives in news/market data — a web red is
+    // allowed but must clear the same two-model cross-check as any other red.
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Promoter's earlier firm collapsed amid loan defaults." });
+    asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Cross-check agrees — documented default." });
     const r = await assignFlag(
-      item({ id: "A13-09", outputFormat: "Text", greenFlag: "None", redFlag: "Strong political ties" }),
-      { value: "largest political donor", confidence: "low" },
+      item({ id: "A9-04", outputFormat: "Text", greenFlag: "Clean", redFlag: "Past defaults/frauds elsewhere" }),
+      { value: "promoter's earlier venture Zenith Infra wound up amid defaults", confidence: "low" },
+      { web: true },
+    );
+    expect(r.flag).toBe("RED");
+    expect(r.reason).toMatch(/web-sourced/i);
+    expect(asMock(llm.bulkClassify.completeJSON)).toHaveBeenCalledTimes(1); // cross-checked
+  });
+
+  it("downgrades a web-sourced RED to NEUTRAL when the cross-check model disagrees (unconfirmed rumour)", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "A forum post alleges a problem." });
+    asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({ flag: "NEUTRAL", reason: "Unsubstantiated — no primary source." });
+    const r = await assignFlag(
+      item({ id: "A9-04", outputFormat: "Text", greenFlag: "Clean", redFlag: "Past defaults/frauds elsewhere" }),
+      { value: "unverified allegation", confidence: "low" },
       { web: true },
     );
     expect(r.flag).toBe("NEUTRAL");
-    expect(r.reason).toMatch(/web-sourced/i);
+    expect(r.needsReview).toBe(true);
   });
 
   it("allows a filing RED when a different model CONFIRMS it on cross-check", async () => {

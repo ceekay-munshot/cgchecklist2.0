@@ -615,7 +615,7 @@ const QUAL_SCHEMA = {
  * `value` for the flag engine PLUS a `rationale` of 2-3 full sentences carrying
  * the actual figures/dates/names and why they matter — no green/red call.
  */
-const RATIONALE_INSTRUCTION =
+const RATIONALE_CORE =
   `You are a BUY-SIDE governance analyst writing for an investment committee. Don't ` +
   `just extract — ASSESS. Return TWO things:\n` +
   `  • "value": the one-line headline fact, WITH the key number, that drives the ` +
@@ -631,13 +631,37 @@ const RATIONALE_INSTRUCTION =
   `out anything that looks like box-ticking, a boilerplate/thin disclosure, or a gap. ` +
   `Stay STRICTLY grounded in the excerpts — no speculation, no invented numbers; if a ` +
   `needed detail isn't disclosed, SAY SO plainly (a disclosure gap is itself a ` +
-  `finding). Do NOT declare green/red/pass/fail.\n` +
+  `finding). Do NOT declare green/red/pass/fail.\n`;
+
+// Default grounding: answer ONLY about the subject company. Strengthened against
+// the "deck comps table" leak — a pitch deck often names a listed peer/comparable
+// (e.g. for benchmarking), and the extractor must NOT attribute that peer's facts
+// to the subject (the real "Sigachi in a MetalBook report" failure mode).
+const GROUNDING_SUBJECT =
   `GROUNDING (critical): write ONLY about the company named above, using ONLY facts ` +
   `that appear in the excerpts. Do NOT name, compare to, or import facts about any ` +
   `OTHER company (no invented "peers", no directors/auditors/figures from your own ` +
-  `training knowledge). You MAY name a subsidiary/parent/related party that the ` +
-  `excerpts themselves mention. If the excerpts are actually about a DIFFERENT, ` +
-  `similarly-named company, do not answer from them.\n` +
+  `training knowledge). If the excerpts name a DIFFERENT company as a PEER / ` +
+  `COMPARABLE / COMPETITOR / BENCHMARK — common in pitch decks, investor ` +
+  `presentations and comparison tables — do NOT report ITS facts (revenue, margins, ` +
+  `valuation, governance) as the subject's; answer only for the company named above. ` +
+  `You MAY name a subsidiary/parent/related party that the excerpts themselves ` +
+  `mention. If the excerpts are actually about a DIFFERENT, similarly-named company, ` +
+  `do not answer from them.\n`;
+
+// Cross-entity grounding: this item is about the PROMOTER's conduct at OTHER
+// companies/ventures, so a fact about a DIFFERENT company IS the answer — as long
+// as it is tied to THIS company's promoter/founder. Still strictly excerpt-bound.
+const GROUNDING_CROSS_ENTITY =
+  `GROUNDING (cross-entity item): this item assesses the PROMOTER/FOUNDER's track ` +
+  `record at OTHER companies and ventures — so a fact about a DIFFERENT company IS ` +
+  `relevant when the excerpts tie it to this company's promoter/founder (their ` +
+  `earlier/other businesses, defaults, frauds, or wind-ups elsewhere). Report it, ` +
+  `naming that other entity. Stay STRICTLY grounded in the excerpts — no invented ` +
+  `cases and no facts from your own training knowledge; every claim must be linked ` +
+  `to the named promoter/founder, not merely a same-named stranger.\n`;
+
+const RATIONALE_TAIL =
   `FRESHNESS: use the MOST RECENT fiscal year present in the excerpts; if several ` +
   `years appear, prefer the latest and IGNORE older ones. State which fiscal year ` +
   `the figures are for (e.g. "(FY2025-26)").\n` +
@@ -649,6 +673,15 @@ const RATIONALE_INSTRUCTION =
   `"not available". Reserve "not available" for when the figure genuinely can't be ` +
   `determined from the excerpts.\n`;
 
+/** Grounding-aware instruction: permissive for promoter-elsewhere items, strict otherwise. */
+function rationaleInstruction(crossEntity = false): string {
+  return RATIONALE_CORE + (crossEntity ? GROUNDING_CROSS_ENTITY : GROUNDING_SUBJECT) + RATIONALE_TAIL;
+}
+
+// Back-compat: the subject-grounded instruction used by the note / numeric-from-doc
+// extractors (which are never cross-entity).
+const RATIONALE_INSTRUCTION = rationaleInstruction(false);
+
 const LARGE_PASSAGE_CHARS = 12_000;
 
 async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise<Analysis> {
@@ -659,19 +692,31 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   const role = totalChars > LARGE_PASSAGE_CHARS ? "longContext" : "reasoning";
 
   const subject = evidence.companyName ? `Company under review: ${evidence.companyName}\n` : "";
+  const crossEntity = !!evidence.crossEntity;
+  // The company half of the relevance gate flips for cross-entity items: for a
+  // promoter-track-record-elsewhere item, a passage about a DIFFERENT company is the
+  // answer (as long as it concerns this company's promoter), so we must NOT reject it
+  // for naming another entity — only reject truly unrelated people/companies.
+  const companyGate = crossEntity
+    ? `OR (b) they are about a person/company UNRELATED to this company's promoter/` +
+      `founder. NOTE: this item is about the promoter's OTHER ventures, so a passage ` +
+      `about a DIFFERENT company IS relevant when it concerns this company's promoter/` +
+      `founder — do NOT reject it merely for naming another company.`
+    : `OR (b) they are about a DIFFERENT company than the one under ` +
+      `review — a same/similar-named entity, OR a peer/comparable/competitor named for ` +
+      `benchmarking (e.g. a comps table in a deck) — rather than this company or its ` +
+      `own named group. Do NOT answer a private company's item using facts about a ` +
+      `same-named LISTED company from your knowledge.`;
   const prompt =
     subject +
     `Checklist item: ${item.item}\n` +
     (item.description ? `Definition: ${item.description}\n` : "") +
     `\nRELEVANCE GATE — set "relevant" to false if EITHER: (a) these excerpts are about a ` +
     `CLEARLY DIFFERENT subject than this item (e.g. a revenue line for a contingent-` +
-    `liability item), OR (b) they are about a DIFFERENT company than the one under ` +
-    `review (a same/similar-named entity) rather than this company or its own named ` +
-    `group. Do NOT answer a private company's item using facts about a same-named ` +
-    `LISTED company from your knowledge. Otherwise, sharing the general topic counts ` +
+    `liability item), ${companyGate} Otherwise, sharing the general topic counts ` +
     `as relevant — when in doubt on topic (not company), treat it as RELEVANT; do not ` +
     `reject merely because the passage is brief or indirect.\n` +
-    `If relevant, answer for this item. ${RATIONALE_INSTRUCTION}` +
+    `If relevant, answer for this item. ${rationaleInstruction(crossEntity)}` +
     `If the excerpts genuinely don't answer it, set "found" to false. Set "confident" ` +
     `to false when the passage is on-topic but thin (we keep a low-confidence verdict ` +
     `rather than discarding it). Put the exact supporting sentence (<=240 chars) in ` +

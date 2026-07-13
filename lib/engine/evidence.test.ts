@@ -239,6 +239,29 @@ describe("getEvidence", () => {
     expect(ev.status).toBe("not_available"); // off-topic result filtered out
   });
 
+  it("KEEPS a promoter-track-record-elsewhere hit about a DIFFERENT company (A9-04 cross-entity)", async () => {
+    // A9-04 is "promoter track record ELSEWHERE" — the relevant hit is about the
+    // promoter's OTHER venture, which never names this company. The subject-company
+    // filter must NOT drop it (the AFCOM-promoter miss), and crossEntity is flagged
+    // so the extractor relaxes its subject-only grounding.
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "Afcom Holdings", ticker: "AFCOM" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([]); // no filing coverage
+    vi.mocked(webResearcher.search).mockResolvedValue({
+      status: "ok",
+      query: "q",
+      results: [
+        { url: "https://news.example/promoter-past", title: "Promoter's earlier firm Zenith Infra wound up", snippet: "collapsed amid loan defaults and legal cases" },
+      ],
+    });
+    const ev = await getEvidence(item({ id: "A9-04", sectionCode: "A9", outputFormat: "Text" }), "run1");
+    expect(ev.status).toBe("found");
+    expect(ev.from).toBe("web");
+    expect(ev.crossEntity).toBe(true);
+    expect(ev.passages?.[0].citation.sourceUrl).toContain("news.example");
+  });
+
   it("retrieves matching passages with page citations for a document item", async () => {
     vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([
       sd({

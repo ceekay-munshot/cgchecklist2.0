@@ -136,6 +136,14 @@ export interface Evidence {
   citation?: EvidenceCitation;
   /** Subject company name — anchors the extractor so it can't drift to a namesake. */
   companyName?: string;
+  /**
+   * This item assesses the PROMOTER/FOUNDER's conduct at OTHER entities (track
+   * record elsewhere, earlier/other ventures). The relevant evidence is, by
+   * design, about a DIFFERENT company linked by the promoter — so the
+   * subject-company relevance filter is skipped and the extractor is told it may
+   * report facts about the promoter's other entities. Kept low-confidence (web).
+   */
+  crossEntity?: boolean;
   note?: string;
 }
 
