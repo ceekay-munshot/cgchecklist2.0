@@ -78,6 +78,29 @@ export function parseAnswer(body: string): string {
   return "";
 }
 
+/**
+ * Extract source URLs from a RAW MUNS response body. MUNS returns its citations
+ * inside <doc_source>/<docsource> tags (and sometimes inline) — `cleanup()` strips
+ * those from the displayed prose, but they are exactly the "source per line item"
+ * the client wants, so we harvest the http(s) URLs BEFORE they're discarded and
+ * persist the top one as the item's source. Returns unique URLs in first-seen
+ * order; empty when the body carries no URL (then the item keeps no web source —
+ * no regression). Trailing sentence punctuation is trimmed from each URL.
+ */
+export function extractSourceUrls(body: string): string[] {
+  if (!body) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of body.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+    const url = m[0].replace(/[.,;:]+$/, "");
+    if (!seen.has(url)) {
+      seen.add(url);
+      out.push(url);
+    }
+  }
+  return out;
+}
+
 function cleanup(s: string): string {
   return s
     .replace(/<doc_source>[\s\S]*?<\/doc_source>/gi, "")

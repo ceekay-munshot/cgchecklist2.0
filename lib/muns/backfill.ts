@@ -117,13 +117,17 @@ export async function munsBackfill(
       const verdict = buildVerdict(engineItem, analysis, flagRes);
       const evidenceQuote = analysis.table ? serializeTable(analysis.table) : (analysis.evidenceQuote ?? null);
       const providers = ["muns", analysis.providerUsed].filter(Boolean).join("+");
+      // Persist the MUNS citation so the report shows a source per line item (the
+      // client's ask). The analyzer's own citation (if it kept one) wins; else the
+      // first harvested MUNS source URL.
+      const sourceUrl = analysis.citation?.sourceUrl ?? a.sources?.[0] ?? null;
       await persist(runId, it.id, {
         status: flagRes.needsReview ? "NEEDS_REVIEW" : "DONE",
         flag: flagRes.flag,
         verdict,
         value: (analysis.value ?? "").slice(0, 200),
         evidenceQuote,
-        sourceUrl: null,
+        sourceUrl,
         confidence: CONFIDENCE_SCORE[analysis.confidence],
         isNonNegotiable: it.isNonNegotiable,
         gatePass: flagRes.gatePass ?? null,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MEGA_PROMPT, SUFFIX, letterFor, formatQuestion, parseAnswer } from "@/lib/muns/prompts";
+import { MEGA_PROMPT, SUFFIX, letterFor, formatQuestion, parseAnswer, extractSourceUrls } from "@/lib/muns/prompts";
 import { binPackSections, type LaneSection } from "@/lib/muns/lanes";
 
 describe("prompts", () => {
@@ -43,6 +43,28 @@ describe("parseAnswer", () => {
 
   it("returns empty string when nothing parseable", () => {
     expect(parseAnswer("<task>only tools</task>")).toBe("");
+  });
+});
+
+describe("extractSourceUrls — harvest citations before cleanup() drops them", () => {
+  it("pulls http(s) URLs from doc_source tags and inline text, de-duped", () => {
+    const body =
+      "<ans>Promoter's prior firm wound up amid defaults" +
+      "<doc_source>https://www.valuepickr.com/t/afcom/123</doc_source></ans>" +
+      "<ans>See also https://www.moneycontrol.com/news/afcom and https://www.valuepickr.com/t/afcom/123.</ans>";
+    expect(extractSourceUrls(body)).toEqual([
+      "https://www.valuepickr.com/t/afcom/123",
+      "https://www.moneycontrol.com/news/afcom",
+    ]);
+  });
+
+  it("trims trailing sentence punctuation from a URL", () => {
+    expect(extractSourceUrls("source: https://example.com/a/b).")).toEqual(["https://example.com/a/b"]);
+  });
+
+  it("returns [] for a filing-style doc_source with no URL (no regression)", () => {
+    expect(extractSourceUrls("<ans>Clean<doc_source>Annual Report p.12</doc_source></ans>")).toEqual([]);
+    expect(extractSourceUrls("")).toEqual([]);
   });
 });
 

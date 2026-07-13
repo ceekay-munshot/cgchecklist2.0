@@ -1,4 +1,4 @@
-import { parseAnswer } from "./prompts";
+import { parseAnswer, extractSourceUrls } from "./prompts";
 
 /**
  * Thin MUNS Chat API client. ONE POST per turn; the session id comes from the
@@ -33,6 +33,8 @@ export interface MunsCallArgs {
 export interface MunsCallResult {
   ok: boolean;
   answer: string;
+  /** Source URLs harvested from the raw MUNS body (citations) — for the item's source. */
+  sources: string[];
   chatId?: string;
   status: number;
   error?: string;
@@ -50,11 +52,56 @@ export function munsEnv(): MunsEnv {
   };
 }
 
+/** A YYYY-MM-DD window from `now` back `years`, clamped to `now` as the upper bound. */
+function windowYears(years: number, now: Date): { fromDate: string; toDate: string } {
+  const toDate = now.toISOString().slice(0, 10);
+  const from = new Date(Date.UTC(now.getUTCFullYear() - years, now.getUTCMonth(), now.getUTCDate()));
+  return { fromDate: from.toISOString().slice(0, 10), toDate };
+}
+
 /** today (UTC) and today−2y as YYYY-MM-DD. */
 export function defaultDateWindow(now: Date = new Date()): { fromDate: string; toDate: string } {
-  const toDate = now.toISOString().slice(0, 10);
-  const from = new Date(Date.UTC(now.getUTCFullYear() - 2, now.getUTCMonth(), now.getUTCDate()));
-  return { fromDate: from.toISOString().slice(0, 10), toDate };
+  return windowYears(2, now);
+}
+
+/**
+ * Checklist items whose question is a LIFETIME-record one: a promoter's track
+ * record and other ventures, the company's regulatory / legal / integrity history,
+ * and reputation (CEO, audit-firm calibre, restatement history). A trailing 2-year
+ * window structurally HIDES exactly what these ask about — the AFCOM promoter's
+ * pre-2024 collapsed business was invisible because the search only looked back two
+ * years. These get a wide historical lookback instead. (The whole A9 Regulatory/
+ * Legal/Integrity and A13 Management & Promoter Quality sections are lifetime by
+ * nature.) Everything else keeps the recent-news window.
+ */
+const LIFETIME_SECTIONS = new Set(["A9", "A13"]);
+const LIFETIME_ITEMS = new Set([
+  "A1-05", // director reputation
+  "A4-02", // audit-firm calibre / standing
+  "A7-02", // restatement frequency (history)
+  "A3-01", // promoter holding trend (multi-year)
+]);
+
+/** Is this a lifetime-record item (wide lookback) vs a recent-news one? */
+export function isLifetimeItem(itemId: string, sectionCode: string): boolean {
+  return LIFETIME_SECTIONS.has(sectionCode) || LIFETIME_ITEMS.has(itemId);
+}
+
+/**
+ * The search date window for a specific checklist item. Lifetime-record items get
+ * a long lookback (default 25y, `MUNS_HISTORY_LOOKBACK_YEARS`); everything else
+ * keeps the recent-news window (default 2y, `MUNS_LOOKBACK_YEARS`). `toDate` is
+ * always today, so a wide window never loses recent data — it only ADDS history.
+ */
+export function dateWindowForItem(
+  itemId: string,
+  sectionCode: string,
+  now: Date = new Date(),
+): { fromDate: string; toDate: string } {
+  if (isLifetimeItem(itemId, sectionCode)) {
+    return windowYears(Number(process.env.MUNS_HISTORY_LOOKBACK_YEARS) || 25, now);
+  }
+  return windowYears(Number(process.env.MUNS_LOOKBACK_YEARS) || 2, now);
 }
 
 export async function munsCall(args: MunsCallArgs): Promise<MunsCallResult> {
@@ -98,18 +145,20 @@ export async function munsCall(args: MunsCallArgs): Promise<MunsCallResult> {
     const text = await res.text();
     const newChatId = res.headers.get("x-chat-id") ?? chatId;
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, answer: "[Error] MUNS auth failed (bad/expired token)", chatId: newChatId, status: res.status, error: "auth" };
+      return { ok: false, answer: "[Error] MUNS auth failed (bad/expired token)", sources: [], chatId: newChatId, status: res.status, error: "auth" };
     }
     if (!res.ok) {
-      return { ok: false, answer: `[Error] MUNS HTTP ${res.status}`, chatId: newChatId, status: res.status, error: text.slice(0, 200) };
+      return { ok: false, answer: `[Error] MUNS HTTP ${res.status}`, sources: [], chatId: newChatId, status: res.status, error: text.slice(0, 200) };
     }
     const answer = parseAnswer(text);
     if (!answer) {
-      return { ok: false, answer: "[Error] MUNS returned no parseable answer", chatId: newChatId, status: res.status, error: "empty" };
+      return { ok: false, answer: "[Error] MUNS returned no parseable answer", sources: [], chatId: newChatId, status: res.status, error: "empty" };
     }
-    return { ok: true, answer, chatId: newChatId, status: res.status };
+    // Harvest citation URLs from the RAW body before cleanup() strips them — this
+    // is the item's source ("source per line item"). Empty when none present.
+    return { ok: true, answer, sources: extractSourceUrls(text), chatId: newChatId, status: res.status };
   } catch (e) {
-    return { ok: false, answer: `[Error] ${(e as Error).message}`, chatId, status: 0, error: (e as Error).message };
+    return { ok: false, answer: `[Error] ${(e as Error).message}`, sources: [], chatId, status: 0, error: (e as Error).message };
   } finally {
     clearTimeout(timer);
   }

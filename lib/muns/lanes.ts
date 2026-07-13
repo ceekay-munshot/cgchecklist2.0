@@ -1,5 +1,5 @@
 import { MEGA_PROMPT, formatQuestion } from "./prompts";
-import { munsCall, type MunsEnv, type MunsQueryContext } from "./client";
+import { munsCall, dateWindowForItem, type MunsEnv, type MunsQueryContext } from "./client";
 
 /**
  * Lane orchestration: group the REMAINING parameters by section, bin-pack whole
@@ -42,6 +42,8 @@ export interface LaneAnswer {
   id: string;
   answer: string;
   ok: boolean;
+  /** Source URLs harvested from the MUNS citations for this parameter. */
+  sources: string[];
 }
 
 /** Run a single lane sequentially (history depends on the prior turn). */
@@ -69,14 +71,18 @@ async function runLane(
         indexInSection: i,
         text: p.text,
       });
+      // Per-item search window: lifetime-record items (promoter track record,
+      // legal/integrity, reputation) look back decades; recent-news items stay
+      // on the short window. Overrides the run-level default for this call only.
+      const itemCtx: MunsQueryContext = { ...ctx, ...dateWindowForItem(p.id, p.sectionCode) };
       const res = await munsCall({
         env,
-        ctx,
+        ctx: itemCtx,
         task,
         chatId,
         chatHistory: [...megaHistory, ...sectionHistory],
       });
-      out.push({ id: p.id, answer: res.answer, ok: res.ok });
+      out.push({ id: p.id, answer: res.answer, ok: res.ok, sources: res.sources });
       onProgress?.(p.id, res.ok);
       // On failure record "[Error]" and continue (never abort the lane).
       sectionHistory.push("User: " + task, "AI: " + (res.ok ? res.answer : "[Error]"));
