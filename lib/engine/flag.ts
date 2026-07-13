@@ -167,20 +167,21 @@ export async function assignFlag(
     return applyGate(item, { flag: guard.flag, reason: guard.reason, provider: judged.provider });
   }
 
-  // Web-sourced evidence is noisy (news, blogs, search snippets) — it can inform
-  // a GREEN/NEUTRAL read but must NEVER fire a RED on its own; a governance red
-  // requires audited filings. Downgrade a web-sourced RED to NEUTRAL.
-  if (context.web && judged.flag === "RED") {
-    return applyGate(item, {
-      flag: "NEUTRAL",
-      reason: `Web-sourced signal, not confirmed in filings — not red-flagged. (${judged.reason})`,
-      provider: judged.provider,
-    });
-  }
+  // Web-sourced evidence (news, market data, Valuepickr-style forums) is a
+  // legitimate — often the ONLY — source for qualitative governance signals like a
+  // promoter's track record elsewhere. It MAY fire a RED, but a web red is held to
+  // the same bar as any other: the mandatory two-model cross-check below must
+  // confirm it, and the finding is carried at LOW confidence (set upstream in the
+  // extractor) so the reader knows to corroborate. We annotate the reason so the
+  // web provenance is explicit in the report.
+  const reason =
+    context.web && judged.flag === "RED"
+      ? `${judged.reason} (Web-sourced — low confidence; corroborate against filings/primary sources.)`
+      : judged.reason;
 
   return applyGate(
     item,
-    { flag: judged.flag, reason: judged.reason, provider: judged.provider },
+    { flag: judged.flag, reason, provider: judged.provider },
     // EVERY qualitative RED is cross-checked by a DIFFERENT model (primary
     // excluded) — a one-off judge misfire can't stand as a red.
     () => judge(item, analysis, "bulkClassify", { excludePrimary: true }),

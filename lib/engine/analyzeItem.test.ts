@@ -168,6 +168,48 @@ describe("analyzeItem", () => {
     expect(prompt).toMatch(/other\s+company/i);
   });
 
+  it("SUBJECT GROUNDING: warns against attributing a deck's PEER/comps company to the subject (Sigachi guard)", async () => {
+    // The MetalBook→Sigachi leak: a pitch deck names a listed comparable, and the
+    // extractor must be told not to report that peer's facts as the subject's.
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ relevant: true, found: true, value: "Nil" });
+    const ev: Evidence = {
+      status: "found",
+      from: "document",
+      kind: "QUALITATIVE",
+      companyName: "Metalbook",
+      passages: [{ text: "Comparable listed peers include Sigachi Industries ...", citation: { sourceUrl: "x" } }],
+    };
+    await analyzeItem(item({ id: "A1-05", outputFormat: "Text" }), ev);
+    const prompt = asMock(llm.reasoning.completeJSON).mock.calls[0][0].prompt as string;
+    expect(prompt).toContain("Metalbook");
+    expect(prompt).toMatch(/peer|comparable|competitor|benchmark/i);
+    expect(prompt).toMatch(/comps table|benchmarking/i); // relevance gate mentions decks
+  });
+
+  it("CROSS-ENTITY: relaxes grounding so a promoter-elsewhere item (A9-04) can report a DIFFERENT company's facts", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({
+      relevant: true,
+      found: true,
+      value: "Promoter's earlier firm Zenith Infra wound up amid loan defaults",
+    });
+    const ev: Evidence = {
+      status: "found",
+      from: "web",
+      kind: "QUALITATIVE",
+      companyName: "Afcom Holdings",
+      crossEntity: true,
+      passages: [{ text: "The promoter earlier ran Zenith Infra, which collapsed amid defaults ...", citation: { sourceUrl: "https://news.example/x" } }],
+    };
+    const a = await analyzeItem(item({ id: "A9-04", sectionCode: "A9", outputFormat: "Text" }), ev);
+    expect(a.value).toContain("Zenith Infra");
+    expect(a.confidence).toBe("low"); // web-sourced
+    const prompt = asMock(llm.reasoning.completeJSON).mock.calls[0][0].prompt as string;
+    expect(prompt).toMatch(/cross-entity/i);
+    expect(prompt).toMatch(/other ventures/i);
+    // the relevance gate must NOT tell it to reject a differently-named company here
+    expect(prompt).not.toMatch(/comps table in a deck/i);
+  });
+
   it("RELEVANCE GATE: returns 'not available' for an off-topic passage instead of judging it", async () => {
     // The model decides the excerpt isn't actually about this item (shares a word only).
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({

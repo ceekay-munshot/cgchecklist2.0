@@ -336,6 +336,19 @@ export const WEB_ONLY_ITEMS: Record<string, string> = {
   "A13-09": "promoter political connections affiliations",
 };
 
+/**
+ * Items that, by definition, look at the PROMOTER's conduct at OTHER entities —
+ * their track record elsewhere (A9-04), earlier/other ventures and vintage
+ * (A13-03), and other material businesses (A13-07). The relevant web hit is about
+ * a DIFFERENT company linked by the promoter, so applying the subject-company
+ * relevance filter (webHitRelevant) would wrongly drop exactly the signal we want
+ * (e.g. "the promoter's earlier firm collapsed amid loan defaults" that never
+ * names this company). For these, keep only the blocked-host filter, and tell the
+ * extractor it MAY report facts about the promoter's other entities. The finding
+ * is still web-sourced → carried at low confidence and cross-checked before any RED.
+ */
+export const PROMOTER_ELSEWHERE_ITEMS = new Set<string>(["A9-04", "A13-03", "A13-07"]);
+
 function defaultDocTypesForSection(sectionCode: string): SourceDocType[] {
   if (sectionCode === "A13") return ["EARNINGS_PDF", "ANNUAL_REPORT"];
   if (sectionCode === "A7") return ["EARNINGS_PDF", "ANNUAL_REPORT"];
@@ -406,6 +419,9 @@ export async function getEvidence(item: EngineItem, runId: string): Promise<Evid
     const c = await loadCompany(runId);
     if (c?.name) ev.companyName = c.name;
   }
+  // Promoter-track-record-elsewhere items assess a DIFFERENT company linked by the
+  // promoter — flag it so the extractor relaxes its subject-only grounding.
+  if (PROMOTER_ELSEWHERE_ITEMS.has(item.id)) ev.crossEntity = true;
   return ev;
 }
 
@@ -891,8 +907,15 @@ async function getWebEvidence(
     // Keep only results that actually mention THIS company — drops the off-topic
     // search noise (e.g. an Instagram post about a different company, a generic
     // HR blog) that otherwise yields confidently-wrong web verdicts.
+    // EXCEPTION: promoter-track-record-elsewhere items are ABOUT a different
+    // company linked by the promoter, so a subject-company match would drop the
+    // signal — for these keep every non-social hit and let the extractor + the
+    // red cross-check filter false positives.
+    const crossEntity = PROMOTER_ELSEWHERE_ITEMS.has(item.id);
     const relevant = res.results.filter(
-      (h) => !isBlockedHost(h.url) && webHitRelevant(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, company),
+      (h) =>
+        !isBlockedHost(h.url) &&
+        (crossEntity || webHitRelevant(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, company)),
     );
     let passages: EvidencePassage[] = relevant.slice(0, 3).map((h) => ({
       text: [h.title, h.snippet].filter(Boolean).join(" — ").trim(),
