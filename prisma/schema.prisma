@@ -18,14 +18,13 @@
 
 generator client {
   provider = "prisma-client-js"
-  // engineType = "client" generates an ENGINE-FREE client (Prisma's query
-  // compiler, pure JS/WASM — no native ".so" query engine). Required for
-  // Cloudflare Workers: the Worker runtime can't run Prisma's compiled engine,
-  // so with the default "library" engine the live app fails with "could not
-  // locate the Query Engine". The compiler runs identically in Node (GitHub
-  // Actions) and on the Worker; a driver adapter (PrismaD1 / PrismaD1HTTP, see
-  // lib/db.ts) is always supplied.
-  engineType = "client"
+  // driverAdapters: run Prisma through a driver adapter (PrismaD1 / PrismaD1HTTP,
+  // see lib/db.ts). On Cloudflare Workers the client resolves to Prisma's WASM
+  // query engine — but ONLY when @prisma/client is kept OUT of the Next bundle
+  // via `serverExternalPackages` in next.config.ts (otherwise Turbopack inlines
+  // it and the wasm can't be located at runtime). This is the OpenNext-documented
+  // setup: https://opennext.js.org/cloudflare/howtos/db
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
