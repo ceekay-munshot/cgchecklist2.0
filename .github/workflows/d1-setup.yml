@@ -43,5 +43,18 @@ jobs:
         run: npm run db:seed
 
       - name: Verify — read back the counts from D1
+        # Read the counts straight from D1 with wrangler (the same tool that created
+        # the tables two steps above) instead of an inline tsx script — no module
+        # resolution to trip over. --json sends pure JSON to stdout; jq parses it.
         run: |
-          npx --yes tsx -e "(async () => { const { prisma } = await import('./lib/db'); const s = await prisma.checklistSection.count(); const i = await prisma.checklistItem.count(); console.log('D1 OK - sections:', s, 'items:', i); if (s === 0 || i === 0) process.exit(1); })()"
+          echo "Reading section + item counts back from D1…"
+          npx --yes wrangler@latest d1 execute cg-checklist20 --remote \
+            --command "SELECT (SELECT COUNT(*) FROM ChecklistSection) AS sections, (SELECT COUNT(*) FROM ChecklistItem) AS items;" \
+            --json | tee /tmp/d1count.json
+          sections=$(jq -r '.[0].results[0].sections' /tmp/d1count.json)
+          items=$(jq -r '.[0].results[0].items' /tmp/d1count.json)
+          echo "D1 OK — sections: ${sections}  items: ${items}"
+          if [ "$sections" = "0" ] || [ "$items" = "0" ] || [ "$sections" = "null" ] || [ "$items" = "null" ]; then
+            echo "::error::D1 read-back returned empty/missing counts"
+            exit 1
+          fi
