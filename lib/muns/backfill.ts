@@ -22,6 +22,31 @@ import { munsConfigured, munsEnv, defaultDateWindow, type MunsQueryContext } fro
 const CONFIDENCE_SCORE = { high: 0.9, medium: 0.6, low: 0.3 } as const;
 const COMMITTED = new Set(["DONE", "NEEDS_REVIEW"]);
 
+/**
+ * Sharper research directives for promoter/management-INTEGRITY items. Left to the
+ * bare item text, MUNS returns a generic "no external track record" — it doesn't
+ * distinguish a genuinely clean promoter from one it simply didn't dig into (the
+ * AFCOM promoter-reputation miss). These directives tell it to actively hunt each
+ * NAMED person's adverse history across all time and sources. Appended to the
+ * question; the 3-bullet answer format is unchanged.
+ */
+const ADVERSE_HUNT_DIRECTIVE: Record<string, string> = {
+  "A9-04":
+    "For EACH named promoter and director INDIVIDUALLY (by full name), actively search ALL history and sources — news, Valuepickr and investor forums, MCA filings, credit-rating rationales, and SEBI/NCLT/court/tribunal records — for any past business failure, default, insolvency, fraud, siphoning, litigation, regulatory action, or resignation-under-cloud at OTHER companies. Report each with the entity and year. Only if a thorough search finds nothing, say 'no adverse record found' — do NOT infer a clean record from absence.",
+  "A13-01":
+    "Assess management depth AND the promoter/CEO's credibility by full name: prior ventures and how they fared, any failures, litigation or controversy — search news and forums, not just the current role.",
+  "A13-02":
+    "Assess the CEO/MD's actual track record and credibility by full name: past ventures and outcomes, capital-allocation history, and any failure, litigation or controversy — search news and investor forums, not just the current designation.",
+  "A13-07":
+    "List the promoter's OTHER businesses by name and, for each, whether it has faced failure, default, litigation or controversy — search each entity, not just this company's filings.",
+};
+
+/** The MUNS question text for an item — item text plus any adverse-hunt directive. */
+function questionText(itemId: string, itemText: string): string {
+  const directive = ADVERSE_HUNT_DIRECTIVE[itemId];
+  return directive ? `${itemText} — ${directive}` : itemText;
+}
+
 export interface BackfillOutcome {
   skipped?: boolean;
   reason?: string;
@@ -72,7 +97,7 @@ export async function munsBackfill(
       sec = { code: it.sectionCode, number: meta.number, title: meta.title, params: [] };
       bySection.set(it.sectionCode, sec);
     }
-    sec.params.push({ id: it.id, sectionCode: it.sectionCode, sectionNumber: meta.number, sectionTitle: meta.title, text: it.item });
+    sec.params.push({ id: it.id, sectionCode: it.sectionCode, sectionNumber: meta.number, sectionTitle: meta.title, text: questionText(it.id, it.item) });
   }
   const laneSections = [...bySection.values()];
 

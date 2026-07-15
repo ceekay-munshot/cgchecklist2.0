@@ -119,6 +119,41 @@ describe("assignFlag", () => {
     expect(r.needsReview).toBe(true);
   });
 
+  it("INTEGRITY ABSENCE: 'no adverse record found' on A9-04 is NEUTRAL, not a false GREEN", async () => {
+    // The AFCOM miss: research found nothing on the promoter → judge greens the
+    // "nil" finding → false all-clear. The guard downgrades it to NEUTRAL.
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "No adverse record, so clean." });
+    const r = await assignFlag(
+      item({ id: "A9-04", outputFormat: "Text", greenFlag: "Clean", redFlag: "Past defaults/frauds elsewhere" }),
+      { value: "Promoters have no verified external track record elsewhere", confidence: "low" },
+      { web: true },
+    );
+    expect(r.flag).toBe("NEUTRAL");
+    expect(r.reason).toMatch(/absence of evidence|corroborate/i);
+  });
+
+  it("INTEGRITY ABSENCE: a REAL adverse finding on A9-04 still fires RED (guard only touches absence)", async () => {
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Promoter's prior firm defaulted in 2016." });
+    asMock(llm.bulkClassify.completeJSON).mockResolvedValueOnce({ flag: "RED", reason: "Cross-check agrees." });
+    const r = await assignFlag(
+      item({ id: "A9-04", outputFormat: "Text", greenFlag: "Clean", redFlag: "Past defaults/frauds elsewhere" }),
+      { value: "Promoter's earlier company Zenith Infra defaulted and wound up in 2016", confidence: "low" },
+      { web: true },
+    );
+    expect(r.flag).toBe("RED");
+  });
+
+  it("INTEGRITY ABSENCE: a non-integrity item's 'Nil' is unaffected (still GREEN)", async () => {
+    // A9-01 (SEBI actions) is public-record — a genuine 'Nil' stays GREEN.
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "No SEBI action — clean." });
+    const r = await assignFlag(
+      item({ id: "A9-01", outputFormat: "Count", greenFlag: "None", redFlag: "Orders/penalties" }),
+      { value: "Nil", confidence: "low" },
+      { web: true },
+    );
+    expect(r.flag).toBe("GREEN");
+  });
+
   it("qualitative: an LLM judge decides the flag", async () => {
     asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "Reputed Big Four auditor." });
     const r = await assignFlag(
