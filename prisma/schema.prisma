@@ -18,6 +18,14 @@
 
 generator client {
   provider = "prisma-client-js"
+  // engineType = "client" generates an ENGINE-FREE client (Prisma's query
+  // compiler, pure JS/WASM — no native ".so" query engine). Required for
+  // Cloudflare Workers: the Worker runtime can't run Prisma's compiled engine,
+  // so with the default "library" engine the live app fails with "could not
+  // locate the Query Engine". The compiler runs identically in Node (GitHub
+  // Actions) and on the Worker; a driver adapter (PrismaD1 / PrismaD1HTTP, see
+  // lib/db.ts) is always supplied.
+  engineType = "client"
 }
 
 datasource db {
