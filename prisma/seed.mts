@@ -2,13 +2,20 @@
 // Run with `npm run db:seed` (or automatically via `prisma migrate reset`).
 // Runnable directly: `node prisma/seed.ts` (Node 22 strips the TS types).
 import { PrismaClient } from "@prisma/client";
+import { PrismaD1Http } from "@prisma/adapter-d1";
 import fs from "node:fs";
 import path from "node:path";
 
-// Seed runs as a setup task in Node (GitHub Actions / local), never on Workers.
-// Use the DIRECT Postgres connection (DIRECT_URL) so it works with the standard
-// engine even when DATABASE_URL is the Accelerate ("prisma://") URL.
-const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL || process.env.DATABASE_URL });
+// Seed runs as a setup task in Node (GitHub Actions / local). It writes to the
+// same Cloudflare D1 database as the app, over the D1 HTTP API — so it uses the
+// same adapter as lib/db.ts (account + database IDs are public; only the token is
+// a secret, from CLOUDFLARE_API_TOKEN).
+const adapter = new PrismaD1Http({
+  CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || "489675fbe898cd94904c654de83ade00",
+  CLOUDFLARE_DATABASE_ID: process.env.CLOUDFLARE_DATABASE_ID || "a29b643f-0b80-44af-ac1c-4a721f8345ed",
+  CLOUDFLARE_D1_TOKEN: process.env.CLOUDFLARE_D1_TOKEN || process.env.CLOUDFLARE_API_TOKEN || "",
+});
+const prisma = new PrismaClient({ adapter });
 
 interface RawItem {
   id: string;
