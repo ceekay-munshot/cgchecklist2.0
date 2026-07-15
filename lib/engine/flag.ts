@@ -104,6 +104,26 @@ async function judge(
 }
 
 /**
+ * A DETERMINISTIC numeric RED is only as trustworthy as the value it was handed —
+ * and several Tier-1 items have mis-fed a raw ₹ amount or a growth-% into a
+ * ratio/percentage band (e.g. "D/E 4417.63" built from debt+advances in lakh, or
+ * "382% of PBT" from an other-income amount, or a "140.58%" pay-INCREASE compared
+ * to a ">11% of net profit" limit) — producing an absurd RED that contradicts the
+ * finding's own narrative. So a deterministic RED is now held to the SAME bar as a
+ * qualitative one: an independent judge re-reads the FINDING against the green/red
+ * descriptions, and if it doesn't agree the figure is genuinely red the flag is
+ * downgraded to NEUTRAL + needs-review. GREEN / NEUTRAL results skip the check
+ * entirely (no extra LLM cost on the common path).
+ */
+function confirmNumericRed(
+  flag: Flag,
+  item: EngineItem,
+  analysis: Analysis,
+): (() => Promise<{ flag: JudgeFlag; reason: string; provider: string }>) | undefined {
+  return flag === "RED" ? () => judge(item, analysis, "reasoning") : undefined;
+}
+
+/**
  * Assign a flag to an analysed item.
  *   - NUMERIC     -> DETERMINISTIC comparison of the value against the parsed
  *                    green/red bands (no LLM).
@@ -140,7 +160,7 @@ export async function assignFlag(
   const custom = CUSTOM_NUMERIC[item.id];
   if (custom && num != null) {
     const c = custom(num);
-    return applyGate(item, { flag: c.flag, reason: c.reason });
+    return applyGate(item, { flag: c.flag, reason: c.reason }, confirmNumericRed(c.flag, item, analysis));
   }
 
   // Categorical compliance rule (e.g. A2-01 audit committee): decide
@@ -169,7 +189,7 @@ export async function assignFlag(
   const noteItem = evidenceStrategyFor(item).useGeminiNote === true;
   if (kindOf(item) === "NUMERIC" && !noteItem && num != null) {
     const c = classifyNumeric(num, item.greenFlag, item.redFlag);
-    return applyGate(item, { flag: c.flag, reason: c.reason });
+    return applyGate(item, { flag: c.flag, reason: c.reason }, confirmNumericRed(c.flag, item, analysis));
   }
 
   // qualitative
