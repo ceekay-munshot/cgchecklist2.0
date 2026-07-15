@@ -1,4 +1,5 @@
-import type { Company, SourceDoc, SourceDocType } from "@prisma/client";
+import type { Company, SourceDoc } from "@prisma/client";
+import type { SourceDocType } from "@/lib/db-enums";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
 import { callJSON } from "./llm";
@@ -833,7 +834,7 @@ function extractSectionPassages(
       budget -= body.length;
       out.push({
         text: body,
-        citation: { sourceDocId: doc.id, sourceUrl: doc.sourceUrl, page: pageAtOffset(text, at), docType: doc.type, docName: doc.name },
+        citation: { sourceDocId: doc.id, sourceUrl: doc.sourceUrl, page: pageAtOffset(text, at), docType: doc.type as SourceDocType, docName: doc.name },
       });
     }
     if (out.length >= MAX_PASSAGES || budget <= 0) break;
@@ -919,7 +920,7 @@ function retrievePassages(docs: SourceDoc[], keywords: string[]): EvidencePassag
     budget -= text.length;
     passages.push({
       text,
-      citation: { sourceDocId: s.doc.id, sourceUrl: s.doc.sourceUrl, page: s.chunk.page, docType: s.doc.type, docName: s.doc.name },
+      citation: { sourceDocId: s.doc.id, sourceUrl: s.doc.sourceUrl, page: s.chunk.page, docType: s.doc.type as SourceDocType, docName: s.doc.name },
     });
   }
   return passages;

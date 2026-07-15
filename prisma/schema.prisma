@@ -1,6 +1,13 @@
 // Prisma schema for the CG Checklist analysis dashboard.
 // Flag-based model — there is intentionally NO numeric scoring anywhere.
 //
+// DATASTORE: Cloudflare D1 (SQLite) via Prisma's driver adapter (@prisma/adapter-d1).
+//  - The Worker connects through the D1 BINDING (see wrangler.jsonc); the analysis
+//    job (GitHub Actions, Node) connects through the D1 HTTP API. Both use SQLite.
+//  - SQLite has no native ENUMs, so the former enum fields are plain String columns
+//    (the app already works in string literals — zero code change). Allowed values
+//    are documented next to each field. No Postgres-only @db.Text / @db.Date.
+//
 // North stars (see PROJECT_BRIEF.md):
 //  1. Acquisition is FULLY AUTOMATED — the analyst supplies only a company;
 //     documents are harvested (Screener.in + web research). Manual upload is a
@@ -14,75 +21,23 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  // Runtime queries go through DATABASE_URL. On Cloudflare/production this is the
-  // Prisma Accelerate URL ("prisma://…"); Accelerate can't run migrations, so the
-  // Prisma CLI (migrate/db push) uses directUrl — a DIRECT Postgres connection.
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  // With the D1 driver adapter the runtime connection comes from the adapter (the
+  // D1 binding in the Worker, the D1 HTTP API in Node) — this url is only used by
+  // the Prisma CLI for local schema work (a throwaway file db).
+  url      = env("DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------------
-// Enums
+// Former enums — now String columns (SQLite has no native enum). Allowed values:
+//   Flag:          GREEN | RED | NEUTRAL | NOT_AVAILABLE
+//   Exchange:      NSE | BSE
+//   RunStatus:     QUEUED | HARVESTING | HARVESTED | PROCESSING | PARTIAL | DONE | ERROR
+//   SourceDocType: SCREENER_PAGE | ANNUAL_REPORT | EARNINGS_PDF | ANNOUNCEMENT | WEB | MANUAL_UPLOAD
+//   FetchedVia:    SCREENER | FIRECRAWL | SCRAPEDO | DIRECT | MANUAL
+//   FetchStatus:   OK | EMPTY | FAILED
+//   ItemStatus:    PENDING | PROCESSING | DONE | ERROR | DEFERRED | NEEDS_REVIEW
 // ---------------------------------------------------------------------------
-
-/// The four flags an evaluated item can resolve to. NEVER a numeric score.
-enum Flag {
-  GREEN
-  RED
-  NEUTRAL
-  NOT_AVAILABLE
-}
-
-enum Exchange {
-  NSE
-  BSE
-}
-
-/// Lifecycle of a (long-lived, resumable) analysis run.
-/// PARTIAL = paused, waiting for the next day's free-tier quota.
-enum RunStatus {
-  QUEUED
-  HARVESTING
-  HARVESTED // acquisition complete, ready for processing
-  PROCESSING
-  PARTIAL
-  DONE
-  ERROR
-}
-
-enum SourceDocType {
-  SCREENER_PAGE // Tier-1 structured scrape of the Screener.in company page
-  ANNUAL_REPORT
-  EARNINGS_PDF
-  ANNOUNCEMENT
-  WEB
-  MANUAL_UPLOAD // deferred manual-upload fallback; unused in the primary flow
-}
-
-enum FetchedVia {
-  SCREENER
-  FIRECRAWL
-  SCRAPEDO
-  DIRECT
-  MANUAL // deferred manual-upload fallback; unused in the primary flow
-}
-
-enum FetchStatus {
-  OK
-  EMPTY
-  FAILED
-}
-
-/// Per-item resumable processing state within a run.
-enum ItemStatus {
-  PENDING
-  PROCESSING
-  DONE
-  ERROR
-  DEFERRED // skipped this pass (e.g. quota exhausted); retried next day
-  NEEDS_REVIEW
-}
 
 // ---------------------------------------------------------------------------
 // Checklist reference data (seeded idempotently from data/checklist.json)
@@ -101,14 +56,14 @@ model ChecklistItem {
   id              String           @id // JSON item id, e.g. "A1-01"
   section         ChecklistSection @relation(fields: [sectionCode], references: [code], onDelete: Cascade)
   sectionCode     String
-  item            String           @db.Text // the question / item text
-  description     String?          @db.Text
+  item            String // the question / item text
+  description     String?
   outputFormat    String? // output_format (e.g. "Percentage (%)", "Yes/No", "Ratio")
-  greenFlag       String?          @db.Text // green_flag
-  redFlag         String?          @db.Text // red_flag
-  sourceHint      String?          @db.Text // source_hint
+  greenFlag       String? // green_flag
+  redFlag         String? // red_flag
+  sourceHint      String? // source_hint
   isNonNegotiable Boolean          @default(false) // is_non_negotiable
-  thresholdLogic  String?          @db.Text // threshold_logic
+  thresholdLogic  String? // threshold_logic
   orderIndex      Int              @default(0)
 
   itemResults ItemResult[]
@@ -126,7 +81,7 @@ model Company {
   id           String        @id @default(cuid())
   name         String
   ticker       String?
-  exchange     Exchange?
+  exchange     String? // NSE | BSE
   sector       String?
   cin          String?       @unique // Corporate Identification Number
   screenerUrl  String? // resolved Screener.in company URL
@@ -143,7 +98,7 @@ model AnalysisRun {
   id              String       @id @default(cuid())
   company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   companyId       String
-  status          RunStatus    @default(QUEUED)
+  status          String       @default("QUEUED") // RunStatus
   createdBy       String?
   createdAt       DateTime     @default(now())
   lastProcessedAt DateTime?
@@ -161,22 +116,22 @@ model AnalysisRun {
 /// A document harvested for a run (Screener.in / web research / — deferred —
 /// a manual upload).
 model SourceDoc {
-  id             String        @id @default(cuid())
-  run            AnalysisRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id             String      @id @default(cuid())
+  run            AnalysisRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId          String
-  type           SourceDocType
+  type           String // SourceDocType
   name           String
   sourceUrl      String
-  fetchedVia     FetchedVia
-  fetchStatus    FetchStatus   @default(OK)
+  fetchedVia     String // FetchedVia
+  fetchStatus    String      @default("OK") // FetchStatus
   storageRef     String? // path / object key to the stored raw file
   pages          Int?
   structuredData Json? // Tier-1: clean typed JSON (financials, shareholding, pledging, …)
-  extractedText  String?       @db.Text // Tier-2: durable extracted text (persists for later processing)
+  extractedText  String? // Tier-2: durable extracted text (persists for later processing)
   contentHash    String? // sha256 of extracted content — de-dups identical docs (e.g. concall "REC" landing pages) within a run
   note           String? // short human note, especially on EMPTY / FAILED
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   itemResults ItemResult[]
 
@@ -195,11 +150,11 @@ model ItemResult {
   runId           String
   item            ChecklistItem @relation(fields: [itemId], references: [id])
   itemId          String
-  status          ItemStatus    @default(PENDING)
-  flag            Flag? // null until evaluated
+  status          String        @default("PENDING") // ItemStatus
+  flag            String? // Flag — null until evaluated
   verdict         String? // one-liner verdict
   value           String? // extracted value (e.g. "33%", "1.2x")
-  evidenceQuote   String?       @db.Text
+  evidenceQuote   String?
   sourceDoc       SourceDoc?    @relation(fields: [sourceDocId], references: [id])
   sourceDocId     String?
   sourcePage      Int? // citation page within the source doc (survives text pruning)
@@ -209,10 +164,10 @@ model ItemResult {
   gatePass        Boolean? // non-negotiable gate outcome (null until evaluated)
   providerUsed    String? // which LLM provider produced this result
   attempts        Int           @default(0)
-  lastError       String?       @db.Text
+  lastError       String?
   processedAt     DateTime?
   analystOverride Boolean       @default(false)
-  overrideNote    String?       @db.Text
+  overrideNote    String?
   createdAt       DateTime      @default(now())
 
   @@unique([runId, itemId])
@@ -229,7 +184,7 @@ model ItemResult {
 model ProviderUsage {
   id       String   @id @default(cuid())
   provider String
-  date     DateTime @db.Date
+  date     DateTime // truncated to a day (UTC midnight) by the caller
   requests Int      @default(0)
   tokens   Int      @default(0)
 

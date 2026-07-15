@@ -112,7 +112,7 @@ export async function loadReport(tickerOrRunId: string): Promise<CompanyReport |
   });
   if (!run) {
     const company = await prisma.company.findFirst({
-      where: { ticker: { equals: tickerOrRunId, mode: "insensitive" } },
+      where: { ticker: tickerOrRunId.toUpperCase() },
       orderBy: { createdAt: "desc" },
     });
     if (!company) return null;
