@@ -14,7 +14,7 @@ export default defineConfig({
     // dummy Accelerate URL so incidental client init doesn't emit noise. Tests
     // that touch the DB mock it — nothing here makes a real connection.
     env: {
-      DATABASE_URL: "prisma://accelerate.prisma-data.net/?api_key=test",
+      DATABASE_URL: "file:./test.db",
     },
   },
 });

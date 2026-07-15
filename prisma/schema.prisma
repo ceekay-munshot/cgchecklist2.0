@@ -23,9 +23,11 @@ generator client {
 datasource db {
   provider = "sqlite"
   // With the D1 driver adapter the runtime connection comes from the adapter (the
-  // D1 binding in the Worker, the D1 HTTP API in Node) — this url is only used by
-  // the Prisma CLI for local schema work (a throwaway file db).
-  url      = env("DATABASE_URL")
+  // D1 HTTP API, see lib/db.ts) — this url is ONLY used by the Prisma CLI for local
+  // schema work, so it is a static throwaway file. It deliberately does NOT read
+  // DATABASE_URL: a leftover Accelerate ("prisma://") value there would conflict
+  // with the driver adapter at client construction.
+  url      = "file:./prisma/dev.db"
 }
 
 // ---------------------------------------------------------------------------
