@@ -44,4 +44,4 @@ jobs:
 
       - name: Verify — read back the counts from D1
         run: |
-          npx --yes tsx -e "import { prisma } from './lib/db'; const s = await prisma.checklistSection.count(); const i = await prisma.checklistItem.count(); console.log('D1 OK — sections:', s, 'items:', i); if (s === 0 || i === 0) process.exit(1);"
+          npx --yes tsx -e "(async () => { const { prisma } = await import('./lib/db'); const s = await prisma.checklistSection.count(); const i = await prisma.checklistItem.count(); console.log('D1 OK - sections:', s, 'items:', i); if (s === 0 || i === 0) process.exit(1); })()"
