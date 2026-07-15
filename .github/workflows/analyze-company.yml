@@ -53,6 +53,10 @@ jobs:
       MUNS_TOKEN: ${{ secrets.MUNS_TOKEN }}
       USER_INDEX: ${{ secrets.USER_INDEX }}
       CONTEXT_EMAIL: ${{ secrets.CONTEXT_EMAIL }}
+      # Final self-audit stage: re-reads the finished report and auto-corrects
+      # clear bugs (contradictory flags, impossible numbers, lakh/crore slips)
+      # before the dashboard opens it. "1" makes MUNS defer finalization to it.
+      QA_REVIEW: "1"
 
     steps:
       - name: Checkout
@@ -110,6 +114,14 @@ jobs:
         env:
           TICKER: ${{ inputs.ticker }}
         run: npm run muns-backfill -- "$TICKER"
+
+      # Final self-audit: clear report bugs, then finalize the run to DONE. Runs
+      # even if MUNS was skipped/failed — it also un-sticks the deferred run.
+      - name: Self-audit (QA) ${{ inputs.ticker }}
+        if: always()
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: npm run qa-review -- "$TICKER"
 
       - name: Upload analysis report
         if: always()

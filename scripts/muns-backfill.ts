@@ -50,9 +50,13 @@ async function main() {
   } finally {
     // Never leave the run stuck in the deferred PROCESSING state (e.g. if MUNS
     // errored mid-run): finalize it so the loading screen can open the report.
-    const run = await prisma.analysisRun.findUnique({ where: { id: runId }, select: { status: true } });
-    if (run?.status === "PROCESSING") {
-      await prisma.analysisRun.update({ where: { id: runId }, data: { status: "DONE" } }).catch(() => {});
+    // EXCEPT when a QA self-audit step follows (QA_REVIEW): qa-review is the
+    // finalizer then, so keep PROCESSING and let the audit run first.
+    if (!process.env.QA_REVIEW) {
+      const run = await prisma.analysisRun.findUnique({ where: { id: runId }, select: { status: true } });
+      if (run?.status === "PROCESSING") {
+        await prisma.analysisRun.update({ where: { id: runId }, data: { status: "DONE" } }).catch(() => {});
+      }
     }
   }
 }

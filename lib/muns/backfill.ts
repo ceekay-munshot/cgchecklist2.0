@@ -84,8 +84,11 @@ export async function munsBackfill(
   });
   if (!targets.length) {
     // analyze-run deferred the run to PROCESSING so the loading screen waited;
-    // nothing to fill, so finalize it back to DONE.
-    await prisma.analysisRun.update({ where: { id: runId }, data: { status: "DONE" } }).catch(() => {});
+    // nothing to fill. Finalize to DONE — unless a QA self-audit step follows
+    // (QA_REVIEW), in which case leave PROCESSING for qa-review to finalize.
+    if (!process.env.QA_REVIEW) {
+      await prisma.analysisRun.update({ where: { id: runId }, data: { status: "DONE" } }).catch(() => {});
+    }
     return { ...empty, reason: "no blank parameters" };
   }
 
@@ -176,12 +179,19 @@ export async function munsBackfill(
       sections.map((s) => ({ code: s.code, name: s.name })),
       fresh,
     );
+    // Finalize the run status too — analyze-run deferred it to PROCESSING so the
+    // loading screen waited for this backfill. BUT if a QA self-audit step follows
+    // (QA_REVIEW set), keep a complete run in PROCESSING and let qa-review be the
+    // finalizer, so the loading screen also waits for the bug-clearing pass.
+    const finalStatus = summary.complete
+      ? process.env.QA_REVIEW
+        ? "PROCESSING"
+        : "DONE"
+      : "PARTIAL";
     await prisma.analysisRun.update({
       where: { id: runId },
-      // Finalize the run status too — analyze-run deferred it to PROCESSING so
-      // the loading screen waited for this backfill to finish.
       data: {
-        status: summary.complete ? "DONE" : "PARTIAL",
+        status: finalStatus,
         summaryJson: summary as never,
         itemsDone: summary.itemsDone,
         itemsError: summary.itemsError,
