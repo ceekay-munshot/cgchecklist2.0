@@ -21,7 +21,7 @@ jobs:
           ref: claude/order-wins-dashboard-9f8hzc
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Guard — CLOUDFLARE_API_TOKEN must be set
         run: |
