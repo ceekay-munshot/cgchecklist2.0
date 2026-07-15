@@ -27,6 +27,26 @@ export interface FlagContext {
 
 type JudgeFlag = "GREEN" | "RED" | "NEUTRAL";
 
+/**
+ * Promoter / management INTEGRITY items ask "is there anything adverse?" For these,
+ * a research result of "nothing found / nil / no verified record" is ABSENCE of
+ * evidence — NOT a positive clean bill. Greening it produces a false all-clear on
+ * exactly the item an analyst scans first (the AFCOM promoter-reputation miss). So
+ * an absence finding here becomes NEUTRAL + a "corroborate" note, never a confident
+ * GREEN. (SEBI/NCLT actions are PUBLIC record, so their genuine "nil" is meaningful
+ * and stays OUT of this set — only the hard-to-search reputation items are in.)
+ */
+const INTEGRITY_ABSENCE_ITEMS = new Set(["A9-04", "A13-01", "A13-02", "A13-07"]);
+
+/** A finding that reads as "we found nothing", not a positive confirmation. */
+export function isAbsenceFinding(text: string | null | undefined): boolean {
+  const t = (text ?? "").toLowerCase();
+  if (!t.trim()) return true;
+  return /\b(nil|none|no\s+(such|verified|adverse|material|prior|external|other|known|reported|disclosed|evidence|record|history|track)\b|not\s+(found|identified|available|disclosed|established)|no\s+\w+\s+(found|identified|reported|established))\b/.test(
+    t,
+  );
+}
+
 interface JudgeResult {
   flag: JudgeFlag;
   reason: string;
@@ -165,6 +185,24 @@ export async function assignFlag(
   const guard = guardAmount(item.id, judged.flag, analysis.value, analysis.evidenceQuote, context.scale);
   if (guard) {
     return applyGate(item, { flag: guard.flag, reason: guard.reason, provider: judged.provider });
+  }
+
+  // Integrity-absence guard: on a promoter/management-integrity item, "nothing
+  // adverse found" is ABSENCE of evidence, not a clean record — never let it stand
+  // as a confident GREEN. Downgrade to NEUTRAL with an explicit corroborate note.
+  if (
+    INTEGRITY_ABSENCE_ITEMS.has(item.id) &&
+    judged.flag === "GREEN" &&
+    isAbsenceFinding(`${analysis.value} ${analysis.evidenceQuote ?? ""}`)
+  ) {
+    return applyGate(item, {
+      flag: "NEUTRAL",
+      reason:
+        `No adverse record surfaced in research — this is ABSENCE of evidence, not a ` +
+        `confirmed clean record. Corroborate against news / Valuepickr / MCA / court & ` +
+        `tribunal records before treating the promoter's track record as clean. (${judged.reason})`,
+      provider: judged.provider,
+    });
   }
 
   // Web-sourced evidence (news, market data, Valuepickr-style forums) is a
