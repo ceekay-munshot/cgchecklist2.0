@@ -1,6 +1,6 @@
 name: report-export
 
-# Manual: exports a company's latest run (from the persistent Neon DB) as
+# Manual: exports a company's latest run (from Cloudflare D1) as
 # downloadable files — a colour-graded Excel workbook and a self-contained HTML
 # report — uploaded as an artifact. No analysis is run; this only reads existing
 # results, so it's cheap and needs no LLM keys.
@@ -18,8 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # Persistent DB that holds the analysed run (required).
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Cloudflare D1 over the HTTP API — holds the analysed run (required, read-only).
+      # Account + database IDs are public identifiers; only the token is secret.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "489675fbe898cd94904c654de83ade00"
+      CLOUDFLARE_DATABASE_ID: "a29b643f-0b80-44af-ac1c-4a721f8345ed"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,10 +33,10 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Guard — DATABASE_URL must be set
+      - name: Guard — CLOUDFLARE_API_TOKEN must be set
         run: |
-          if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::DATABASE_URL secret is not set — point it at the Neon DB that holds the run."
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set — point it at Cloudflare D1, which holds the run."
             exit 1
           fi
 

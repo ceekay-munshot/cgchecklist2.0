@@ -55,7 +55,7 @@ export default async function Home() {
         </div>
 
         {dbError ? (
-          <EmptyPanel emoji="🔌" title="Database unavailable" body="Couldn't reach the database. Check DATABASE_URL, then refresh." />
+          <EmptyPanel emoji="🔌" title="Database unavailable" body="Couldn't reach the database. Check the Cloudflare D1 connection (CLOUDFLARE_API_TOKEN), then refresh." />
         ) : listed.length === 0 ? (
           <EmptyPanel
             emoji="🌱"

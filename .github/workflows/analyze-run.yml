@@ -1,7 +1,7 @@
 name: analyze-run
 
 # Manual-only: runs the FULL 106-item, resumable, quota-aware analysis for a
-# company against the persistent Neon DB. Re-running continues where it stopped
+# company against Cloudflare D1. Re-running continues where it stopped
 # (DONE items skipped); under an exhausted free-tier quota it PARTIALs and the
 # next run resumes. Harvest the ticker first (harvest-validate).
 #
@@ -28,9 +28,11 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Runtime queries via Accelerate; migrations/seed via the direct connection.
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      # Cloudflare D1 over the HTTP API (lib/db.ts + prisma/seed.mts → PrismaD1Http).
+      # Account + database IDs are public identifiers; only the token is secret.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "489675fbe898cd94904c654de83ade00"
+      CLOUDFLARE_DATABASE_ID: "a29b643f-0b80-44af-ac1c-4a721f8345ed"
       # Engine routing: OpenAI (paid) is PRIMARY for every role; the free
       # providers below stay as a safety-net fallback chain.
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -58,22 +60,23 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Guard — DATABASE_URL must be set
+      - name: Guard — CLOUDFLARE_API_TOKEN must be set
         run: |
-          if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::DATABASE_URL secret is not set. Analysis needs the persistent Neon DB that holds the harvested SourceDocs."
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Analysis reads/writes Cloudflare D1 (Settings → Secrets and variables → Actions)."
             exit 1
           fi
 
       - name: Install dependencies
         run: npm ci
 
-      # migrate deploy (never reset) + idempotent seed: ensures the schema
-      # (ItemResult source refs) and the 106 ChecklistItems exist before running.
-      - name: Prisma generate, migrate & seed
+      # Apply the D1 schema (idempotent CREATE TABLE IF NOT EXISTS) with wrangler,
+      # then idempotently upsert the checklist — so the tables + ChecklistItems
+      # exist before running, self-healing on a fresh/updated D1.
+      - name: Prisma generate, apply D1 schema & seed
         run: |
           npx prisma generate
-          npx prisma migrate deploy
+          npx --yes wrangler@latest d1 execute cg-checklist20 --remote --file=./migrations/0001_init.sql --yes
           npm run db:seed
 
       # Inputs are passed via env (not interpolated) to avoid shell injection.
