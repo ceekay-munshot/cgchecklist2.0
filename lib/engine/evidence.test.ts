@@ -190,6 +190,13 @@ describe("researchQueriesFor — analyst multi-angle search for Tier-3 items", (
     const qs = researchQueriesFor(item({ id: "A9-01", sectionCode: "A9" }), tcs, "SEBI actions", ["Deepak Parasuraman"]);
     expect(qs.every((q) => !q.includes('"Deepak Parasuraman"'))).toBe(true);
   });
+  it("DIRECTOR reputation (A1-05) googles each director by name — the Saregama/Pratip gap", () => {
+    const s = evidenceStrategyFor(item({ id: "A1-05", sectionCode: "A1", outputFormat: "Text/Score" }));
+    expect(s.webFallback).toBe(true); // now a web-research item, not an AR directorship count
+    const qs = researchQueriesFor(item({ id: "A1-05", sectionCode: "A1" }), tcs, "director reputation", ["Pratip Chaudhuri"]);
+    expect(qs.some((q) => q.includes('"Pratip Chaudhuri"'))).toBe(true);
+    expect(qs.some((q) => q.includes('"Pratip Chaudhuri"') && /valuepickr/i.test(q))).toBe(true);
+  });
 });
 
 describe("loadSubjectPeople — extract promoter/director names for person-search", () => {
@@ -229,7 +236,11 @@ describe("loadSubjectPeople — extract promoter/director names for person-searc
 });
 
 describe("getEvidence", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(callJSON).mockReset(); // no leaked name-extraction result
+    resetSubjectPeopleCache();
+  });
 
   it("Tier-3 research pools multiple queries, de-dupes, and DROPS the company's own filing hosts", async () => {
     vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
@@ -246,7 +257,10 @@ describe("getEvidence", () => {
       ],
     });
     const ev = await getEvidence(item({ id: "A9-04", sectionCode: "A9", outputFormat: "Text" }), "run1");
-    expect(webResearcher.search).toHaveBeenCalledTimes(3); // three analyst angles
+    // Several analyst angles were searched (plain + adverse-terms + Valuepickr).
+    const queries = vi.mocked(webResearcher.search).mock.calls.map((c) => String(c[0]));
+    expect(queries.some((q) => /fraud|default|litigation/i.test(q))).toBe(true);
+    expect(queries.some((q) => /valuepickr/i.test(q))).toBe(true);
     expect(ev.status).toBe("found");
     // the independent news source survives; the exchange filing host is dropped
     const urls = (ev.passages ?? []).map((p) => p.citation.sourceUrl);
