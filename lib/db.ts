@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaD1, PrismaD1Http } from "@prisma/adapter-d1";
+import { PrismaD1, PrismaD1HTTP } from "@prisma/adapter-d1";
 
 // Datastore: Cloudflare D1 (SQLite). ONE `prisma` singleton for BOTH runtimes —
 // the analysis job (GitHub Actions, Node) and the web app (Cloudflare Worker) —
@@ -42,7 +42,7 @@ function createClient(): PrismaClient {
     cf?.CLOUDFLARE_D1_TOKEN ||
     cf?.CLOUDFLARE_API_TOKEN ||
     "";
-  const adapter = new PrismaD1Http({
+  const adapter = new PrismaD1HTTP({
     CLOUDFLARE_ACCOUNT_ID: cf?.CLOUDFLARE_ACCOUNT_ID || CF_ACCOUNT_ID,
     CLOUDFLARE_DATABASE_ID: cf?.CLOUDFLARE_DATABASE_ID || CF_DATABASE_ID,
     CLOUDFLARE_D1_TOKEN: token,
