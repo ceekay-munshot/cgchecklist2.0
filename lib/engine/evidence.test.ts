@@ -10,8 +10,18 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/scrape", () => ({
   webResearcher: { search: vi.fn(), fetchUrl: vi.fn() },
 }));
+vi.mock("./llm", () => ({ callJSON: vi.fn() }));
 
-import { buildWebQuery, evidenceStrategyFor, getEvidence, webHitRelevant, researchQueriesFor } from "./evidence";
+import {
+  buildWebQuery,
+  evidenceStrategyFor,
+  getEvidence,
+  webHitRelevant,
+  researchQueriesFor,
+  loadSubjectPeople,
+  resetSubjectPeopleCache,
+} from "./evidence";
+import { callJSON } from "./llm";
 import type { Company } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
@@ -167,6 +177,54 @@ describe("researchQueriesFor — analyst multi-angle search for Tier-3 items", (
   it("a non-research item gets a single query", () => {
     const qs = researchQueriesFor(item({ id: "A7a-01", sectionCode: "A7a" }), tcs, "contingent liabilities");
     expect(qs).toHaveLength(1);
+  });
+  it("person-track-record items google the promoter by NAME (not company-anchored)", () => {
+    const qs = researchQueriesFor(item({ id: "A9-04", sectionCode: "A9" }), tcs, "promoter track record", [
+      "Deepak Parasuraman",
+      "Lalit Gupta",
+    ]);
+    expect(qs.some((q) => q.includes('"Deepak Parasuraman"'))).toBe(true);
+    expect(qs.some((q) => q.includes('"Deepak Parasuraman"') && /valuepickr/i.test(q))).toBe(true);
+  });
+  it("a non-person research item (A9-01 SEBI actions) ignores the names", () => {
+    const qs = researchQueriesFor(item({ id: "A9-01", sectionCode: "A9" }), tcs, "SEBI actions", ["Deepak Parasuraman"]);
+    expect(qs.every((q) => !q.includes('"Deepak Parasuraman"'))).toBe(true);
+  });
+});
+
+describe("loadSubjectPeople — extract promoter/director names for person-search", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSubjectPeopleCache();
+  });
+  it("pulls individual names from the board/promoter section and strips honorifics", async () => {
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "Afcom Holdings", ticker: "AFCOM" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([
+      sd({
+        id: "ar1",
+        type: "ANNUAL_REPORT",
+        sourceUrl: "u",
+        name: "AR",
+        extractedText: "===== PAGE 12 =====\nBoard of Directors\nThe board comprises Capt. Deepak Parasuraman and Dr. Lalit Gupta.",
+      }),
+    ]);
+    vi.mocked(callJSON).mockResolvedValue({
+      data: { names: ["Capt. Deepak Parasuraman", "Dr. Lalit Gupta"] },
+      provider: "groq",
+    });
+    const names = await loadSubjectPeople("runNames");
+    expect(names).toContain("Deepak Parasuraman"); // honorific stripped
+    expect(names).toContain("Lalit Gupta");
+  });
+  it("returns [] gracefully when no documents are harvested (never breaks evidence)", async () => {
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "X", ticker: "X" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([]);
+    expect(await loadSubjectPeople("runEmpty")).toEqual([]);
+    expect(callJSON).not.toHaveBeenCalled();
   });
 });
 

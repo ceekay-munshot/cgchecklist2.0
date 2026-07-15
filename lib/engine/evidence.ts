@@ -1,6 +1,7 @@
 import type { Company, SourceDoc, SourceDocType } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
+import { callJSON } from "./llm";
 import type { ScreenerStructuredData } from "@/lib/harvest/types";
 import { computeNumeric, findRatio, findSeriesRow, getShareholdingSeries } from "./numeric";
 import { companyScaleFrom, type CompanyScale } from "./materiality";
@@ -347,7 +348,7 @@ export const WEB_ONLY_ITEMS: Record<string, string> = {
  * extractor it MAY report facts about the promoter's other entities. The finding
  * is still web-sourced → carried at low confidence and cross-checked before any RED.
  */
-export const PROMOTER_ELSEWHERE_ITEMS = new Set<string>(["A9-04", "A13-03", "A13-07"]);
+export const PROMOTER_ELSEWHERE_ITEMS = new Set<string>(["A9-04", "A13-02", "A13-03", "A13-07"]);
 
 function defaultDocTypesForSection(sectionCode: string): SourceDocType[] {
   if (sectionCode === "A13") return ["EARNINGS_PDF", "ANNUAL_REPORT"];
@@ -455,7 +456,10 @@ async function getEvidenceInner(item: EngineItem, runId: string): Promise<Eviden
       if (docFirst.status === "found") return docFirst;
     }
     const company = await loadCompany(runId);
-    const web = await getWebEvidence(item, company, strategy, kind);
+    // Person-track-record items get the promoter/director NAMES so the researcher
+    // can google the actual person (loaded once per run; empty for other items).
+    const people = PROMOTER_ELSEWHERE_ITEMS.has(item.id) ? await loadSubjectPeople(runId) : [];
+    const web = await getWebEvidence(item, company, strategy, kind, people);
     if (web.status === "found") return web;
     const docFb = await getDocumentEvidence(runId, strategy, kind);
     if (docFb.status === "found") return docFb;
@@ -468,7 +472,8 @@ async function getEvidenceInner(item: EngineItem, runId: string): Promise<Eviden
 
   if (strategy.webFallback) {
     const company = await loadCompany(runId);
-    const web = await getWebEvidence(item, company, strategy, kind);
+    const people = PROMOTER_ELSEWHERE_ITEMS.has(item.id) ? await loadSubjectPeople(runId) : [];
+    const web = await getWebEvidence(item, company, strategy, kind, people);
     if (web.status === "found") return web;
     return { status: "not_available", from: "web", kind, note: web.note ?? doc.note };
   }
@@ -494,6 +499,70 @@ export function isUnlistedRun(runId: string): Promise<boolean> {
   if (cached) return cached;
   const p = loadCompany(runId).then((c) => !!c && !c.ticker);
   unlistedCache.set(runId, p);
+  return p;
+}
+
+// Promoter / director NAMES for this run — so the researcher can google the actual
+// PERSON (how you find a promoter's OTHER-company history that never names this
+// company). Extracted once from the harvested board/promoter section, memoised.
+// Best-effort: any failure (no docs, no LLM quota) returns [] and the researcher
+// simply falls back to company-anchored search — never breaks evidence.
+const peopleCache = new Map<string, Promise<string[]>>();
+
+/** Reset the per-run subject-people cache (tests). */
+export function resetSubjectPeopleCache(): void {
+  peopleCache.clear();
+}
+
+const NAMES_SCHEMA = {
+  type: "object",
+  properties: { names: { type: "array", items: { type: "string" } } },
+  required: ["names"],
+  additionalProperties: false,
+} as const;
+
+export function loadSubjectPeople(runId: string): Promise<string[]> {
+  const cached = peopleCache.get(runId);
+  if (cached) return cached;
+  const p = (async () => {
+    try {
+      const company = await loadCompany(runId);
+      const docs = await prisma.sourceDoc.findMany({
+        where: { runId, fetchStatus: "OK", extractedText: { not: null }, type: { not: "SCREENER_PAGE" } },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!docs.length) return [];
+      const passages = extractSectionPassages(
+        docs,
+        ["board of directors", "promoter", "promoters", "directors", "shareholding pattern"],
+        6000,
+        3000,
+      );
+      if (!passages.length) return [];
+      const prompt =
+        `From these annual-report excerpts for ${company?.name ?? "the company"}, list the FULL NAMES of the ` +
+        `PROMOTERS and BOARD DIRECTORS — individual PEOPLE only (never company / entity names). Strip honorifics ` +
+        `(Mr/Ms/Dr/Capt). Return a JSON array "names".\n\n` +
+        passages
+          .map((x) => x.text)
+          .join("\n---\n")
+          .slice(0, 8000);
+      const { data } = await callJSON<{ names: string[] }>("bulkClassify", { prompt, temperature: 0 }, NAMES_SCHEMA);
+      const seen = new Set<string>();
+      const names: string[] = [];
+      for (const raw of data.names ?? []) {
+        const n = raw.replace(/^(mr|ms|mrs|dr|capt|shri|smt)\.?\s+/i, "").trim();
+        if (n.length >= 4 && /\s/.test(n) && !seen.has(n.toLowerCase())) {
+          seen.add(n.toLowerCase());
+          names.push(n);
+        }
+      }
+      return names.slice(0, 5);
+    } catch {
+      return []; // best-effort: names only ENHANCE the search
+    }
+  })();
+  peopleCache.set(runId, p);
   return p;
 }
 
@@ -925,7 +994,12 @@ function isFilingHost(url: string): boolean {
 }
 
 /** The set of searches to run for an item — several analyst angles for research items, one otherwise. */
-export function researchQueriesFor(item: EngineItem, company: Company | null, topic: string): string[] {
+export function researchQueriesFor(
+  item: EngineItem,
+  company: Company | null,
+  topic: string,
+  people: string[] = [],
+): string[] {
   const base = buildWebQuery(company, topic);
   if (!RESEARCH_ITEMS.has(item.id)) return base ? [base] : [];
   const queries = [
@@ -933,6 +1007,17 @@ export function researchQueriesFor(item: EngineItem, company: Company | null, to
     buildWebQuery(company, `${topic} ${ADVERSE_QUERY_TERMS}`),
     buildWebQuery(company, `${topic} valuepickr forum`),
   ];
+  // Person-track-record items: google the actual PROMOTER/DIRECTOR by NAME. This
+  // is how a real analyst finds their history at OTHER companies — the story that
+  // never names this company (the AFCOM cross-entity case). We DON'T anchor these
+  // to the company (that would defeat the point); the extractor's cross-entity
+  // grounding + the red cross-check keep a same-named stranger out.
+  if (PROMOTER_ELSEWHERE_ITEMS.has(item.id)) {
+    for (const name of people.slice(0, 3)) {
+      queries.push(`"${name}" India ${ADVERSE_QUERY_TERMS}`);
+      queries.push(`"${name}" promoter director valuepickr`);
+    }
+  }
   return [...new Set(queries.filter(Boolean))];
 }
 
@@ -941,9 +1026,10 @@ async function getWebEvidence(
   company: Company | null,
   strategy: EvidenceStrategy,
   kind: ItemKind,
+  people: string[] = [],
 ): Promise<Evidence> {
   const topic = strategy.webQuery ?? item.item;
-  const queries = researchQueriesFor(item, company, topic);
+  const queries = researchQueriesFor(item, company, topic, people);
   if (!queries.length) return { status: "not_available", from: "web", kind, note: "no company/query for web fallback" };
   const isResearch = RESEARCH_ITEMS.has(item.id);
 
