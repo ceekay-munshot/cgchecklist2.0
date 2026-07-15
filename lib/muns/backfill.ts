@@ -31,6 +31,8 @@ const COMMITTED = new Set(["DONE", "NEEDS_REVIEW"]);
  * question; the 3-bullet answer format is unchanged.
  */
 const ADVERSE_HUNT_DIRECTIVE: Record<string, string> = {
+  "A1-05":
+    "Do NOT just count directorships (that is a separate item). For EACH board member INDIVIDUALLY, by full name — especially the INDEPENDENT directors — research their PERSONAL reputation and integrity: search news, Valuepickr, MCA, and SEBI/CBI/ED/court records for any fraud, default, ban, disqualification, arrest, bail, or serious controversy at ANY company or public role, past or present. Give a per-director verdict: name → standing/credibility → any red flag WITH the entity, year and source. If a director is genuinely clean after a thorough search, say so per name; do NOT infer a clean record from absence.",
   "A9-04":
     "For EACH named promoter and director INDIVIDUALLY (by full name), actively search ALL history and sources — news, Valuepickr and investor forums, MCA filings, credit-rating rationales, and SEBI/NCLT/court/tribunal records — for any past business failure, default, insolvency, fraud, siphoning, litigation, regulatory action, or resignation-under-cloud at OTHER companies. Report each with the entity and year. Only if a thorough search finds nothing, say 'no adverse record found' — do NOT infer a clean record from absence.",
   "A13-01":

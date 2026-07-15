@@ -36,7 +36,7 @@ type JudgeFlag = "GREEN" | "RED" | "NEUTRAL";
  * GREEN. (SEBI/NCLT actions are PUBLIC record, so their genuine "nil" is meaningful
  * and stays OUT of this set — only the hard-to-search reputation items are in.)
  */
-const INTEGRITY_ABSENCE_ITEMS = new Set(["A9-04", "A13-01", "A13-02", "A13-07"]);
+const INTEGRITY_ABSENCE_ITEMS = new Set(["A1-05", "A9-04", "A13-01", "A13-02", "A13-07"]);
 
 /** A finding that reads as "we found nothing", not a positive confirmation. */
 export function isAbsenceFinding(text: string | null | undefined): boolean {
