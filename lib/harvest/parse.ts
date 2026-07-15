@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import type { SourceDocType } from "@prisma/client";
+import type { SourceDocType } from "@/lib/db-enums";
 import type {
   DocumentLink,
   PeriodTable,

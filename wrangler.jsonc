@@ -1,0 +1,42 @@
+{
+  // Cloudflare Worker config for the Next.js app, built via @opennextjs/cloudflare.
+  // Shape matches Cloudflare's Workers-Builds autoconfig (main + assets + self-ref
+  // + observability) so the connected Git build deploys cleanly. We intentionally
+  // DON'T wire the R2 incremental cache: every page renders per-request (see the
+  // `await connection()` calls), so there's nothing to cache — and that avoids
+  // forcing an R2 bucket to exist before the app can deploy.
+  //
+  // The app reaches Cloudflare D1 over the D1 HTTP API (lib/db.ts → PrismaD1Http)
+  // using the CLOUDFLARE_API_TOKEN Worker secret — so the exact same code runs
+  // unchanged in Node (GitHub Actions) and on the Worker. Set that secret once in
+  // the dashboard (Worker → Settings → Variables and Secrets), or via:
+  //     npx wrangler secret put CLOUDFLARE_API_TOKEN
+  // The `DB` binding below is kept for wrangler's D1 tooling (migrations) + a
+  // possible future switch to binding-based access.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cgchecklist20",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "cgchecklist20"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cg-checklist20",
+      "database_id": "a29b643f-0b80-44af-ac1c-4a721f8345ed",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

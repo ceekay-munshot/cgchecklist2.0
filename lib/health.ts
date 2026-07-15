@@ -6,14 +6,16 @@ import { researchers } from "@/lib/scrape";
 async function pingDatabase(): Promise<ProviderStatus> {
   const base = {
     id: "database",
-    label: "Postgres",
+    label: "Cloudflare D1",
     category: "database",
-    role: "Primary datastore (Prisma)",
+    role: "Primary datastore (Prisma + D1 HTTP)",
     checkedAt: new Date().toISOString(),
   } satisfies Omit<ProviderStatus, "state">;
 
-  if (!process.env.DATABASE_URL?.trim()) {
-    return { ...base, state: "not_configured", message: "DATABASE_URL not set" };
+  // D1 is reached over the HTTP API; only the API token is a secret (the account
+  // + database IDs default in-code — see lib/db.ts).
+  if (!(process.env.CLOUDFLARE_D1_TOKEN || process.env.CLOUDFLARE_API_TOKEN)?.trim()) {
+    return { ...base, state: "not_configured", message: "CLOUDFLARE_API_TOKEN not set" };
   }
 
   const started = Date.now();

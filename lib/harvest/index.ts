@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import type { FetchStatus, FetchedVia, SourceDocType } from "@prisma/client";
+import type { FetchStatus, FetchedVia, SourceDocType } from "@/lib/db-enums";
 import { prisma } from "@/lib/db";
 import { openScreenerSession, type ScreenerSession } from "./browser";
 import { extractDocumentLinks, parseScreenerPage } from "./parse";
@@ -235,7 +235,7 @@ export async function harvestCompany({
       summary.screenerUrl = company.screenerUrl ?? canonicalUrl;
       summary.tier1 = {
         status: "OK",
-        via: existingPage.fetchedVia,
+        via: existingPage.fetchedVia as FetchedVia,
         fields: summariseFields(structured),
         note: `refresh failed (${fetched.note ?? "unknown"}); kept stored page`,
       };
@@ -284,7 +284,7 @@ export async function harvestCompany({
             name: link.name,
             type: link.type,
             category: link.category,
-            via: existingDoc.fetchedVia,
+            via: existingDoc.fetchedVia as FetchedVia,
             status: "OK",
             pages: existingDoc.pages ?? undefined,
             note: existingDoc.note ?? "reused",

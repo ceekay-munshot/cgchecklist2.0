@@ -5,7 +5,7 @@
  *
  * Run via `node --import tsx` (see package.json) so `@/` imports resolve.
  */
-import type { Exchange } from "@prisma/client";
+import type { Exchange } from "@/lib/db-enums";
 import { prisma } from "@/lib/db";
 import { harvestCompany } from "@/lib/harvest";
 import { getProviderUsage } from "@/lib/usage";
@@ -22,7 +22,7 @@ async function main() {
 
   // The analyst supplies only the company — find or create it.
   let company = await prisma.company.findFirst({
-    where: { ticker: { equals: ticker, mode: "insensitive" } },
+    where: { ticker: ticker.toUpperCase() },
   });
   if (!company) {
     company = await prisma.company.create({

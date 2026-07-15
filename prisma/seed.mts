@@ -2,13 +2,20 @@
 // Run with `npm run db:seed` (or automatically via `prisma migrate reset`).
 // Runnable directly: `node prisma/seed.ts` (Node 22 strips the TS types).
 import { PrismaClient } from "@prisma/client";
+import { PrismaD1Http } from "@prisma/adapter-d1";
 import fs from "node:fs";
 import path from "node:path";
 
-// Seed runs as a setup task in Node (GitHub Actions / local), never on Workers.
-// Use the DIRECT Postgres connection (DIRECT_URL) so it works with the standard
-// engine even when DATABASE_URL is the Accelerate ("prisma://") URL.
-const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL || process.env.DATABASE_URL });
+// Seed runs as a setup task in Node (GitHub Actions / local). It writes to the
+// same Cloudflare D1 database as the app, over the D1 HTTP API — so it uses the
+// same adapter as lib/db.ts (account + database IDs are public; only the token is
+// a secret, from CLOUDFLARE_API_TOKEN).
+const adapter = new PrismaD1Http({
+  CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || "489675fbe898cd94904c654de83ade00",
+  CLOUDFLARE_DATABASE_ID: process.env.CLOUDFLARE_DATABASE_ID || "a29b643f-0b80-44af-ac1c-4a721f8345ed",
+  CLOUDFLARE_D1_TOKEN: process.env.CLOUDFLARE_D1_TOKEN || process.env.CLOUDFLARE_API_TOKEN || "",
+});
+const prisma = new PrismaClient({ adapter });
 
 interface RawItem {
   id: string;
@@ -81,15 +88,16 @@ async function main() {
   // parsed to a sane number of items, so a bad/partial load never wipes the set.
   const keepIds = new Set(data.sections.flatMap((s) => s.items.map((it) => it.id)));
   if (keepIds.size >= 50) {
-    const stale = await prisma.checklistItem.findMany({
-      where: { id: { notIn: [...keepIds] } },
-      select: { id: true },
-    });
-    if (stale.length) {
-      const staleIds = stale.map((s) => s.id);
+    // Compute stale ids in JS: a large `notIn` exceeds D1/SQLite's bound-parameter
+    // limit and a NEGATION filter can't be auto-split into batches (P2029). Fetch
+    // all ids (no filter → no limit), diff here, then delete the (usually few)
+    // stale ones with a positive `in` (which the D1 adapter batches automatically).
+    const all = await prisma.checklistItem.findMany({ select: { id: true } });
+    const staleIds = all.map((r) => r.id).filter((id) => !keepIds.has(id));
+    if (staleIds.length) {
       await prisma.itemResult.deleteMany({ where: { itemId: { in: staleIds } } });
       await prisma.checklistItem.deleteMany({ where: { id: { in: staleIds } } });
-      console.log(`Pruned ${stale.length} removed item(s): ${staleIds.join(", ")}`);
+      console.log(`Pruned ${staleIds.length} removed item(s): ${staleIds.join(", ")}`);
     }
   }
 

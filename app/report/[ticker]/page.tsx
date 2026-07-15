@@ -23,7 +23,7 @@ export default async function ReportPage({ params }: { params: Promise<{ ticker:
         </h1>
         <p className="mt-2 text-slate-500">
           {dbError
-            ? "Couldn't reach the database — check DATABASE_URL."
+            ? "Couldn't reach the database — check the Cloudflare D1 connection (CLOUDFLARE_API_TOKEN)."
             : `No analysed run exists for “${decodeURIComponent(ticker)}” yet.`}
         </p>
         <Link

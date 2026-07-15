@@ -1,4 +1,5 @@
-import type { ChecklistItem, SourceDocType } from "@prisma/client";
+import type { ChecklistItem } from "@prisma/client";
+import type { SourceDocType } from "@/lib/db-enums";
 import { itemKind, type ItemKind } from "@/lib/checklist";
 
 export type { ItemKind };

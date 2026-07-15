@@ -61,7 +61,7 @@ async function main() {
   log(`# Analyze report — ${ticker}`);
 
   const company = await prisma.company.findFirst({
-    where: { ticker: { equals: ticker, mode: "insensitive" } },
+    where: { ticker: ticker.toUpperCase() },
     orderBy: { createdAt: "desc" },
   });
   const run = company

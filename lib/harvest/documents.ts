@@ -1,5 +1,5 @@
 import { extractText, getDocumentProxy } from "unpdf";
-import type { FetchedVia } from "@prisma/client";
+import type { FetchedVia } from "@/lib/db-enums";
 import { webResearcher } from "@/lib/scrape";
 import type { DocFetchResult, DocumentLink } from "./types";
 import type { ScreenerSession } from "./browser";

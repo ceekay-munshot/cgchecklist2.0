@@ -59,7 +59,7 @@ async function latestRunForTicker(tickerOrId: string) {
   const byId = await prisma.analysisRun.findUnique({ where: { id: tickerOrId }, include: { company: true } });
   if (byId) return byId;
   const company = await prisma.company.findFirst({
-    where: { ticker: { equals: tickerOrId, mode: "insensitive" } },
+    where: { ticker: tickerOrId.toUpperCase() },
     orderBy: { createdAt: "desc" },
   });
   if (!company) return null;

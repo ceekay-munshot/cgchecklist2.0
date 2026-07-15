@@ -1,4 +1,4 @@
-import type { FetchStatus, FetchedVia, SourceDocType } from "@prisma/client";
+import type { FetchStatus, FetchedVia, SourceDocType } from "@/lib/db-enums";
 
 /** A labelled time series: period columns -> values (null = blank cell). */
 export interface PeriodTable {

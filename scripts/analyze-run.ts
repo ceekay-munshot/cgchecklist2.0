@@ -86,7 +86,7 @@ async function resolveRunId(arg: string): Promise<string | null> {
   const byId = await prisma.analysisRun.findUnique({ where: { id: arg } });
   if (byId) return byId.id;
   const company = await prisma.company.findFirst({
-    where: { ticker: { equals: arg, mode: "insensitive" } },
+    where: { ticker: arg.toUpperCase() },
     orderBy: { createdAt: "desc" },
   });
   if (!company) return null;

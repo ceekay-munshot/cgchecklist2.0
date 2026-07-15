@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const ticker = raw.toUpperCase();
 
   const company = await prisma.company.findFirst({
-    where: { ticker: { equals: raw, mode: "insensitive" } },
+    where: { ticker: raw.toUpperCase() },
     orderBy: { createdAt: "desc" },
   });
   const latest = company
