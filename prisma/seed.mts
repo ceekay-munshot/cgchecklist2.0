@@ -88,15 +88,16 @@ async function main() {
   // parsed to a sane number of items, so a bad/partial load never wipes the set.
   const keepIds = new Set(data.sections.flatMap((s) => s.items.map((it) => it.id)));
   if (keepIds.size >= 50) {
-    const stale = await prisma.checklistItem.findMany({
-      where: { id: { notIn: [...keepIds] } },
-      select: { id: true },
-    });
-    if (stale.length) {
-      const staleIds = stale.map((s) => s.id);
+    // Compute stale ids in JS: a large `notIn` exceeds D1/SQLite's bound-parameter
+    // limit and a NEGATION filter can't be auto-split into batches (P2029). Fetch
+    // all ids (no filter → no limit), diff here, then delete the (usually few)
+    // stale ones with a positive `in` (which the D1 adapter batches automatically).
+    const all = await prisma.checklistItem.findMany({ select: { id: true } });
+    const staleIds = all.map((r) => r.id).filter((id) => !keepIds.has(id));
+    if (staleIds.length) {
       await prisma.itemResult.deleteMany({ where: { itemId: { in: staleIds } } });
       await prisma.checklistItem.deleteMany({ where: { id: { in: staleIds } } });
-      console.log(`Pruned ${stale.length} removed item(s): ${staleIds.join(", ")}`);
+      console.log(`Pruned ${staleIds.length} removed item(s): ${staleIds.join(", ")}`);
     }
   }
 
