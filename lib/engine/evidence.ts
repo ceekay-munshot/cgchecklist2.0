@@ -893,31 +893,94 @@ export function buildWebQuery(company: Company | null, topic: string): string {
   return [anchorBits.join(" "), topic].filter(Boolean).join(" ").trim();
 }
 
+/**
+ * TIER-3 "research like an analyst" items: reputation / integrity / legal / market
+ * intel that a filing won't tell you (or only tells you the flattering half). Instead
+ * of one shallow query, we run SEVERAL analyst-style searches (plain, adverse-terms,
+ * and Valuepickr/forum), pool the results, and prefer INDEPENDENT sources over the
+ * company's own filings. Matches how a human vets a promoter: google the topic a few
+ * different ways, read the news and forums — not the company's website.
+ */
+const RESEARCH_ITEMS = new Set<string>([
+  "A1-05", "A1-06", "A3-07", "A4-02", "A6-02",
+  "A9-01", "A9-02", "A9-04", "A9-05",
+  "A10-02", "A10-03", "A12-01", "A12-02",
+  "A13-01", "A13-02", "A13-03", "A13-04", "A13-05", "A13-06", "A13-07", "A13-08", "A13-09",
+  "A15-03",
+]);
+
+/** Adverse-signal terms that make a search actually hunt for problems, not PR. */
+const ADVERSE_QUERY_TERMS = "controversy OR fraud OR default OR litigation OR SEBI OR probe OR penalty OR scam";
+
+/** Exchange/filing hosts — the company's own disclosures, not independent reputation signals. */
+const FILING_HOSTS = ["bseindia.com", "nseindia.com", "sebi.gov.in"];
+function isFilingHost(url: string): boolean {
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    host = url.toLowerCase();
+  }
+  return FILING_HOSTS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/** The set of searches to run for an item — several analyst angles for research items, one otherwise. */
+export function researchQueriesFor(item: EngineItem, company: Company | null, topic: string): string[] {
+  const base = buildWebQuery(company, topic);
+  if (!RESEARCH_ITEMS.has(item.id)) return base ? [base] : [];
+  const queries = [
+    base,
+    buildWebQuery(company, `${topic} ${ADVERSE_QUERY_TERMS}`),
+    buildWebQuery(company, `${topic} valuepickr forum`),
+  ];
+  return [...new Set(queries.filter(Boolean))];
+}
+
 async function getWebEvidence(
   item: EngineItem,
   company: Company | null,
   strategy: EvidenceStrategy,
   kind: ItemKind,
 ): Promise<Evidence> {
-  const query = buildWebQuery(company, strategy.webQuery ?? item.item);
-  if (!query) return { status: "not_available", from: "web", kind, note: "no company/query for web fallback" };
+  const topic = strategy.webQuery ?? item.item;
+  const queries = researchQueriesFor(item, company, topic);
+  if (!queries.length) return { status: "not_available", from: "web", kind, note: "no company/query for web fallback" };
+  const isResearch = RESEARCH_ITEMS.has(item.id);
 
-  const res = await webResearcher.search(query);
-  if (res.status === "ok" && res.results.length) {
-    // Keep only results that actually mention THIS company — drops the off-topic
-    // search noise (e.g. an Instagram post about a different company, a generic
-    // HR blog) that otherwise yields confidently-wrong web verdicts.
-    // EXCEPTION: promoter-track-record-elsewhere items are ABOUT a different
-    // company linked by the promoter, so a subject-company match would drop the
-    // signal — for these keep every non-social hit and let the extractor + the
-    // red cross-check filter false positives.
+  // Run every angle, pool the hits, de-dupe by URL (a real dig, not one shallow query).
+  const searches = await Promise.all(queries.map((q) => webResearcher.search(q)));
+  const seen = new Set<string>();
+  const pooled: { url: string; title?: string; snippet?: string }[] = [];
+  let firstError: string | undefined;
+  for (const res of searches) {
+    if (res.status === "ok") {
+      for (const h of res.results) {
+        if (h.url && !seen.has(h.url)) {
+          seen.add(h.url);
+          pooled.push(h);
+        }
+      }
+    } else if (!firstError) {
+      firstError = res.error;
+    }
+  }
+
+  if (pooled.length) {
+    // Keep only results that actually mention THIS company — drops off-topic noise
+    // (an Instagram post about a different company, a generic HR blog) that yields
+    // confidently-wrong verdicts. EXCEPTIONS: (a) promoter-track-record-ELSEWHERE
+    // items are about a DIFFERENT company linked by the promoter, so a subject match
+    // would drop the signal; (b) for research items we drop the company's OWN filing
+    // hosts (exchanges) — reputation must come from independent news/forums, not PR.
     const crossEntity = PROMOTER_ELSEWHERE_ITEMS.has(item.id);
-    const relevant = res.results.filter(
+    const relevant = pooled.filter(
       (h) =>
         !isBlockedHost(h.url) &&
+        !(isResearch && isFilingHost(h.url)) &&
         (crossEntity || webHitRelevant(`${h.title ?? ""} ${h.snippet ?? ""} ${h.url}`, company)),
     );
-    let passages: EvidencePassage[] = relevant.slice(0, 3).map((h) => ({
+    // Research items read MORE (a real dig): up to 5 snippet passages vs 3.
+    let passages: EvidencePassage[] = relevant.slice(0, isResearch ? 5 : 3).map((h) => ({
       text: [h.title, h.snippet].filter(Boolean).join(" — ").trim(),
       citation: { sourceUrl: h.url },
     }));
@@ -933,5 +996,5 @@ async function getWebEvidence(
       return { status: "found", from: "web", kind, passages, citation: passages[0].citation };
     }
   }
-  return { status: "not_available", from: "web", kind, note: res.error ?? "web research returned nothing" };
+  return { status: "not_available", from: "web", kind, note: firstError ?? "web research returned nothing" };
 }

@@ -11,7 +11,7 @@ vi.mock("@/lib/scrape", () => ({
   webResearcher: { search: vi.fn(), fetchUrl: vi.fn() },
 }));
 
-import { buildWebQuery, evidenceStrategyFor, getEvidence, webHitRelevant } from "./evidence";
+import { buildWebQuery, evidenceStrategyFor, getEvidence, webHitRelevant, researchQueriesFor } from "./evidence";
 import type { Company } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { webResearcher } from "@/lib/scrape";
@@ -156,8 +156,45 @@ describe("evidenceStrategyFor — routing per item", () => {
   });
 });
 
+describe("researchQueriesFor — analyst multi-angle search for Tier-3 items", () => {
+  const tcs = company({ name: "Tata Consultancy Services", ticker: "TCS" });
+  it("a research item (A9-04) gets several angles incl. adverse terms + Valuepickr", () => {
+    const qs = researchQueriesFor(item({ id: "A9-04", sectionCode: "A9" }), tcs, "promoter track record");
+    expect(qs.length).toBeGreaterThanOrEqual(3);
+    expect(qs.some((q) => /fraud|default|litigation|SEBI/i.test(q))).toBe(true);
+    expect(qs.some((q) => /valuepickr/i.test(q))).toBe(true);
+  });
+  it("a non-research item gets a single query", () => {
+    const qs = researchQueriesFor(item({ id: "A7a-01", sectionCode: "A7a" }), tcs, "contingent liabilities");
+    expect(qs).toHaveLength(1);
+  });
+});
+
 describe("getEvidence", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("Tier-3 research pools multiple queries, de-dupes, and DROPS the company's own filing hosts", async () => {
+    vi.mocked(prisma.analysisRun.findUnique).mockResolvedValue({
+      company: { name: "Tata Consultancy Services", ticker: "TCS" },
+    } as unknown as Awaited<ReturnType<typeof prisma.analysisRun.findUnique>>);
+    vi.mocked(prisma.sourceDoc.findMany).mockResolvedValue([]);
+    // Every search angle returns a filing hit (bseindia) AND an independent news hit.
+    vi.mocked(webResearcher.search).mockResolvedValue({
+      status: "ok",
+      query: "q",
+      results: [
+        { url: "https://www.bseindia.com/xml-data/tcs.pdf", title: "TCS filing", snippet: "TCS discloses" },
+        { url: "https://news.example/tcs-promoter-probe", title: "TCS promoter under probe", snippet: "TCS promoter faces scrutiny" },
+      ],
+    });
+    const ev = await getEvidence(item({ id: "A9-04", sectionCode: "A9", outputFormat: "Text" }), "run1");
+    expect(webResearcher.search).toHaveBeenCalledTimes(3); // three analyst angles
+    expect(ev.status).toBe("found");
+    // the independent news source survives; the exchange filing host is dropped
+    const urls = (ev.passages ?? []).map((p) => p.citation.sourceUrl);
+    expect(urls.some((u) => u?.includes("news.example"))).toBe(true);
+    expect(urls.every((u) => !u?.includes("bseindia.com"))).toBe(true);
+  });
 
   it("reads Tier-1 structuredData for a numeric item (D/E), citing the SCREENER_PAGE", async () => {
     vi.mocked(prisma.sourceDoc.findFirst).mockResolvedValue(
