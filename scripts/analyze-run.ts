@@ -239,15 +239,20 @@ async function main() {
       `reds=${outcome.summary.totalReds}  deferred=${outcome.deferred}  pruned=${outcome.pruned}  ` +
       `gate=${outcome.summary.nonNegotiable.gatePass ? "PASS" : "FAIL"}`,
   );
-  await writeReport(runId, outcome);
-
   // If a MUNS backfill step follows (MUNS_TOKEN set), keep the run OUT of the
   // terminal DONE state so the on-demand loading screen waits for the blanks to
   // be filled before opening the report. muns-backfill sets the final status.
+  //
+  // Do this BEFORE writeReport: writeReport re-reads all 103 items and writes the
+  // artifact, which takes several seconds. If the run sat in DONE during that
+  // window, the loading screen could open a HALF-FILLED report (blanks not yet
+  // MUNS-backfilled). Flipping to PROCESSING first closes that window.
   if (process.env.MUNS_TOKEN && outcome.status === "DONE") {
     await prisma.analysisRun.update({ where: { id: runId }, data: { status: "PROCESSING" } }).catch(() => {});
     console.log("Deferring DONE until MUNS backfill completes.");
   }
+
+  await writeReport(runId, outcome);
 }
 
 main()
