@@ -83,6 +83,11 @@ export function useAnalyzeRun() {
   const goToReport = useCallback(
     (t: string) => {
       stopPolling();
+      // Dismiss the loading overlay. Critical when "Re-analyse" is clicked FROM the
+      // report page: router.push to the same /report/<ticker> URL doesn't remount
+      // this component, so without clearing modal state the overlay would sit at
+      // "Analysis complete · 100%" forever even though the refreshed report is ready.
+      setModal(null);
       router.push(`/report/${encodeURIComponent(t)}`);
       router.refresh();
     },
