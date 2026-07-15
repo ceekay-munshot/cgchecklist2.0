@@ -11,8 +11,16 @@ import { recordProviderUsage } from "@/lib/usage";
 const CHROMIUM_PATH =
   process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium";
 const LOGIN_URL = "https://www.screener.in/login/";
+const SEARCH_API = "https://www.screener.in/api/company/search/";
 const MIN_REQUEST_INTERVAL_MS = 1500; // be polite to Screener
 const NAV_TIMEOUT_MS = 45_000;
+
+/** One hit from Screener's public company-search API (name → canonical URL). */
+export interface CompanySearchResult {
+  id: number;
+  name: string;
+  url: string; // e.g. "/company/544224/"
+}
 
 export interface FetchedPage {
   ok: boolean;
@@ -33,6 +41,13 @@ export interface ScreenerSession {
   note?: string;
   fetchRenderedHtml(url: string): Promise<FetchedPage>;
   downloadBuffer(url: string): Promise<DownloadResult>;
+  /**
+   * Resolve a ticker/name to Screener's canonical company page(s) via its public
+   * search API. This is how we recover when the guessed `/company/<TICKER>/` URL
+   * 404s (Screener lists many companies — esp. BSE-only ones — under a numeric
+   * code, e.g. AFCOM → /company/544224/). Best-effort: returns [] on any failure.
+   */
+  searchCompany(query: string): Promise<CompanySearchResult[]>;
   close(): Promise<void>;
 }
 
@@ -129,6 +144,27 @@ export async function openScreenerSession(): Promise<ScreenerSession> {
         buffer,
         contentType: resp.headers()["content-type"],
       };
+    },
+    async searchCompany(query: string): Promise<CompanySearchResult[]> {
+      const q = query.trim();
+      if (!q) return [];
+      await polite();
+      await recordProviderUsage("screener");
+      try {
+        const resp = await context.request.get(`${SEARCH_API}?q=${encodeURIComponent(q)}`, {
+          timeout: NAV_TIMEOUT_MS,
+          headers: { accept: "application/json" },
+        });
+        if (!resp.ok()) return [];
+        const data = (await resp.json()) as unknown;
+        if (!Array.isArray(data)) return [];
+        return data.filter(
+          (r): r is CompanySearchResult =>
+            !!r && typeof (r as CompanySearchResult).url === "string",
+        );
+      } catch {
+        return [];
+      }
     },
     async close() {
       await context.close().catch(() => {});
