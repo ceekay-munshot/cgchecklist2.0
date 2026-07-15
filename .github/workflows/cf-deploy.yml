@@ -1,0 +1,54 @@
+name: cf-deploy
+
+# One-click deploy of the web app to Cloudflare Workers, built with OpenNext.
+# Runs in a known-good Node 22 runner (so it sidesteps whatever is failing in
+# Cloudflare's own Workers-Builds environment), then deploys with wrangler using
+# the CLOUDFLARE_API_TOKEN secret and finally (re)sets that token as the Worker's
+# runtime secret so the live app can reach D1. Manual trigger only.
+#
+# The token must have **Workers Scripts:Edit** (+ Account:Read, and D1 access) —
+# not just D1. If it is D1-only the deploy step returns a clear 403; broaden the
+# token (Cloudflare → My Profile → API Tokens → edit) and re-run.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: cf-deploy
+  cancel-in-progress: false
+
+jobs:
+  cf-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "489675fbe898cd94904c654de83ade00"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Guard — CLOUDFLARE_API_TOKEN must be set
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Build for Cloudflare (OpenNext)
+        run: npx --yes opennextjs-cloudflare build
+
+      - name: Deploy to Cloudflare Workers
+        run: npx --yes wrangler@latest deploy
+
+      # Ensure the live Worker has the D1 token at runtime (lib/db.ts reads
+      # process.env.CLOUDFLARE_API_TOKEN). Idempotent; --yes to skip the prompt.
+      - name: Set the D1 token as the Worker runtime secret
+        run: printf '%s' "$CLOUDFLARE_API_TOKEN" | npx --yes wrangler@latest secret put CLOUDFLARE_API_TOKEN
