@@ -1,16 +1,20 @@
 {
-  // Cloudflare Worker config. The D1 binding below is what replaces the Neon
-  // DATABASE_URL for the web app — the Worker reads/writes the database through
-  // the `DB` binding (see lib/db.ts) instead of a connection string.
+  // Cloudflare Worker config for the Next.js app, built via @opennextjs/cloudflare.
+  // `main` + `assets` point at the adapter's build output under .open-next/.
   //
-  // NOTE: this repo currently has NO Next.js-on-Cloudflare build adapter, and the
-  // "Workers Builds" pipeline has been failing — so the deploy method itself still
-  // needs to be settled (e.g. @opennextjs/cloudflare) before the app can actually
-  // serve on Workers with this binding. The D1 binding here is correct regardless;
-  // the `main`/assets/compatibility wiring is added when we fix the deploy.
+  // The app reaches Cloudflare D1 over the D1 HTTP API (lib/db.ts → PrismaD1Http)
+  // using the CLOUDFLARE_API_TOKEN Worker secret — NOT the `DB` binding below — so
+  // the exact same code runs unchanged in Node (GitHub Actions) and on the Worker.
+  // Set the secret once with:  npx wrangler secret put CLOUDFLARE_API_TOKEN
+  // The `DB` binding is kept for wrangler's D1 tooling (migrations) + future use.
   "name": "cgchecklist20",
-  "compatibility_date": "2024-11-01",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-01",
   "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  },
   "d1_databases": [
     {
       "binding": "DB",
