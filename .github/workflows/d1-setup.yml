@@ -14,7 +14,11 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "489675fbe898cd94904c654de83ade00"
     steps:
+      # Pinned to the migration branch so the job tests THAT code even though the
+      # workflow file lives on main (GitHub only lists workflows that are on main).
       - uses: actions/checkout@v4
+        with:
+          ref: claude/order-wins-dashboard-9f8hzc
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
