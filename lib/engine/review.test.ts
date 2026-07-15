@@ -72,6 +72,22 @@ describe("reviewRun (QA self-audit)", () => {
     expect(prisma.analysisRun.update).toHaveBeenCalled(); // re-summarised
   });
 
+  it("NEVER escalates: a GREEN→RED finding is ignored (the A1-01 regression can't recur)", async () => {
+    mock(prisma.analysisRun.findUnique).mockResolvedValue({ id: "run1" });
+    mock(prisma.checklistItem.findMany).mockResolvedValue(items(25));
+    mock(prisma.checklistSection.findMany).mockResolvedValue([{ code: "A1", name: "Board" }]);
+    mock(prisma.itemResult.findMany).mockResolvedValue(committed(25)); // all GREEN
+    mock(callJSON).mockResolvedValue({
+      data: { findings: [{ id: "A1-00", issue: "hallucinated concern", corrected_flag: "RED", corrected_note: "bad" }] },
+      provider: "gemini",
+    });
+
+    const qa = await reviewRun("run1");
+
+    expect(qa.corrections).toHaveLength(0);
+    expect(prisma.itemResult.update).not.toHaveBeenCalled();
+  });
+
   it("ignores a KEEP / same-flag finding (no write)", async () => {
     mock(prisma.analysisRun.findUnique).mockResolvedValue({ id: "run1" });
     mock(prisma.checklistItem.findMany).mockResolvedValue(items(25));
