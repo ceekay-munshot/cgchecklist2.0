@@ -1,0 +1,47 @@
+name: d1-setup
+
+# One-click test of the Cloudflare D1 migration: create the tables in D1 and seed
+# the checklist, proving the D1 connection works before moving the analysis jobs
+# over. Manual trigger only. Reads the API token from the CLOUDFLARE_API_TOKEN
+# secret; the account + database IDs are public identifiers.
+on:
+  workflow_dispatch:
+
+jobs:
+  d1-setup:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "489675fbe898cd94904c654de83ade00"
+    steps:
+      # Pinned to the migration branch so the job tests THAT code even though the
+      # workflow file lives on main (GitHub only lists workflows that are on main).
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/order-wins-dashboard-9f8hzc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Guard — CLOUDFLARE_API_TOKEN must be set
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Create tables in D1 (apply the init SQL)
+        run: npx --yes wrangler@latest d1 execute cg-checklist20 --remote --file=./migrations/0001_init.sql --yes
+
+      - name: Seed the checklist into D1
+        run: npm run db:seed
+
+      - name: Verify — read back the counts from D1
+        run: |
+          npx --yes tsx -e "import { prisma } from './lib/db'; const s = await prisma.checklistSection.count(); const i = await prisma.checklistItem.count(); console.log('D1 OK — sections:', s, 'items:', i); if (s === 0 || i === 0) process.exit(1);"
