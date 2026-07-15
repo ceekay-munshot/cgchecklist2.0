@@ -48,28 +48,33 @@ const QA_SCHEMA = {
 } as const;
 
 const QA_PROMPT =
-  `You are a senior forensic analyst doing the FINAL consistency audit of a completed ` +
-  `corporate-governance checklist report before it is shown to a client. Each row is one ` +
-  `item: its assigned FLAG (GREEN = good / RED = concern / NEUTRAL), the item's own GREEN ` +
-  `and RED definitions, and the FINDING the flag was based on.\n\n` +
-  `Flag ONLY items that are clearly WRONG for one of these reasons:\n` +
-  `1. CONTRADICTS ITS OWN FINDING — flag RED but the finding text actually says something ` +
+  `You are a senior forensic analyst doing the FINAL audit of a completed corporate-` +
+  `governance checklist report before it is shown to a client. Each row is one item: its ` +
+  `assigned FLAG (GREEN = good / RED = concern / NEUTRAL), the item's own GREEN and RED ` +
+  `definitions, and the FINDING the flag was based on.\n\n` +
+  `Your ONLY job is to catch RED flags that are FALSE ALARMS and should be softened to ` +
+  `GREEN or NEUTRAL. A red is a false alarm when:\n` +
+  `1. It CONTRADICTS ITS OWN FINDING — the flag is RED but the finding text actually reads ` +
   `benign ("conservative", "strong position", "stable", "no concern", "reducing risk", ` +
-  `"within limit", "clean"); or flag GREEN while the finding describes a clear problem.\n` +
-  `2. IMPOSSIBLE NUMBER for its metric — a Debt/Equity ratio above ~20; a "% of PBT / % of ` +
+  `"within limit", "clean", "compliant").\n` +
+  `2. It rests on an IMPOSSIBLE NUMBER — a Debt/Equity ratio above ~20; a "% of PBT / % of ` +
   `profit / % of net worth" above ~300 that is really a raw rupee amount; a rupee figure ` +
-  `100x off because lakh was labelled crore (or vice-versa). Use the other rows to infer ` +
-  `the true scale of the company.\n` +
-  `3. CONTRADICTS ANOTHER ITEM — e.g. one row says "no subsidiaries / single entity" but ` +
-  `another flags "unconsolidated entities" / "consolidation opacity"; or two rows report ` +
-  `the same metric with wildly different values (e.g. D/E 0.12 in one, 4417 in another).\n` +
-  `4. RED ON A NORMAL / STATUTORY FACT that is not a governance defect — holding a required ` +
-  `operating licence, directors retiring by rotation under the Companies Act, a single ` +
-  `one-time IPO-era restatement of prior years.\n\n` +
-  `Do NOT re-judge borderline calls or matters of degree, and do NOT invent new problems — ` +
-  `only CLEAR, defensible errors. For each, return: id, the issue, the flag it SHOULD be ` +
-  `(corrected_flag; use "KEEP" if you are not sure), and a corrected one-line note. Return ` +
-  `an empty list if the report is internally consistent.\n\nREPORT ROWS:\n`;
+  `100x off because lakh was labelled crore (or vice-versa). Use other rows to infer scale.\n` +
+  `3. It CONTRADICTS ANOTHER ITEM — e.g. one row says "no subsidiaries / single entity" but ` +
+  `this red claims "unconsolidated entities"; or the same metric appears with wildly ` +
+  `different values across rows (D/E 0.12 in one, 4417 in another).\n` +
+  `4. It fires on a NORMAL / STATUTORY FACT that is not a governance defect — holding a ` +
+  `required operating licence, directors retiring by rotation under the Companies Act, a ` +
+  `single one-time IPO-era / Ind-AS-adoption restatement of prior years.\n\n` +
+  `HARD RULES:\n` +
+  `- ONLY report items whose current flag is RED. NEVER escalate a GREEN or NEUTRAL to RED, ` +
+  `and never touch a GREEN or NEUTRAL item — a favourable finding (e.g. a majority-` +
+  `independent board, low leverage, zero pledging) is CORRECT and must be left alone.\n` +
+  `- corrected_flag must be GREEN or NEUTRAL (or KEEP if the red is actually justified).\n` +
+  `- Only CLEAR, defensible false alarms — do not re-judge borderline matters of degree.\n\n` +
+  `For each false-alarm red, return: id, the issue, corrected_flag (GREEN/NEUTRAL/KEEP), and ` +
+  `a clean one-line replacement note (no meta-commentary). Empty list if every red is sound.` +
+  `\n\nREPORT ROWS:\n`;
 
 export interface QaCorrection {
   id: string;
@@ -83,7 +88,9 @@ export interface QaSummary {
   skipped?: string;
 }
 
-const REAL_FLAGS = new Set(["GREEN", "RED", "NEUTRAL"]);
+// QA may only SOFTEN a red — never create one. (An over-eager judge once flipped a
+// clean 71.4%-independent board GREEN→RED; the report must never gain a red here.)
+const SOFTEN_TO = new Set(["GREEN", "NEUTRAL"]);
 
 export async function reviewRun(runId: string): Promise<QaSummary> {
   const run = await prisma.analysisRun.findUnique({ where: { id: runId } });
@@ -125,15 +132,19 @@ export async function reviewRun(runId: string): Promise<QaSummary> {
   const corrections: QaCorrection[] = [];
   for (const f of findings) {
     const r = resultByItem.get(f.id);
-    if (!r || !r.flag) continue;
+    // SAFETY: only ever SOFTEN a false-alarm RED to GREEN/NEUTRAL. Skip anything
+    // that isn't currently RED, and any target that isn't a softening — so QA can
+    // never introduce a new red or otherwise touch a favourable finding.
+    if (!r || r.flag !== "RED") continue;
     const to = f.corrected_flag;
-    if (!REAL_FLAGS.has(to) || to === r.flag) continue; // KEEP / same flag = no-op
+    if (!SOFTEN_TO.has(to)) continue;
     await prisma.itemResult
       .update({
         where: { runId_itemId: { runId, itemId: f.id } },
         data: {
           flag: to,
-          verdict: `[QA-corrected ${r.flag}→${to}] ${f.corrected_note} (${f.issue})`.slice(0, 900),
+          // Clean, reader-facing note — no internal "QA-corrected" annotation.
+          verdict: (f.corrected_note || f.issue || r.verdict || "").slice(0, 900),
           providerUsed: `${r.providerUsed ? r.providerUsed + "+" : ""}qa`,
         },
       })
