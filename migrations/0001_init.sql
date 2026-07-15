@@ -1,12 +1,12 @@
 -- CreateTable
-CREATE TABLE "ChecklistSection" (
+CREATE TABLE IF NOT EXISTS "ChecklistSection" (
     "code" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "orderIndex" INTEGER NOT NULL DEFAULT 0
 );
 
 -- CreateTable
-CREATE TABLE "ChecklistItem" (
+CREATE TABLE IF NOT EXISTS "ChecklistItem" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "sectionCode" TEXT NOT NULL,
     "item" TEXT NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE "ChecklistItem" (
 );
 
 -- CreateTable
-CREATE TABLE "Company" (
+CREATE TABLE IF NOT EXISTS "Company" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "ticker" TEXT,
@@ -35,7 +35,7 @@ CREATE TABLE "Company" (
 );
 
 -- CreateTable
-CREATE TABLE "AnalysisRun" (
+CREATE TABLE IF NOT EXISTS "AnalysisRun" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "companyId" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'QUEUED',
@@ -50,7 +50,7 @@ CREATE TABLE "AnalysisRun" (
 );
 
 -- CreateTable
-CREATE TABLE "SourceDoc" (
+CREATE TABLE IF NOT EXISTS "SourceDoc" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "runId" TEXT NOT NULL,
     "type" TEXT NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE "SourceDoc" (
 );
 
 -- CreateTable
-CREATE TABLE "ItemResult" (
+CREATE TABLE IF NOT EXISTS "ItemResult" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "runId" TEXT NOT NULL,
     "itemId" TEXT NOT NULL,
@@ -98,7 +98,7 @@ CREATE TABLE "ItemResult" (
 );
 
 -- CreateTable
-CREATE TABLE "ProviderUsage" (
+CREATE TABLE IF NOT EXISTS "ProviderUsage" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "provider" TEXT NOT NULL,
     "date" DATETIME NOT NULL,
@@ -107,47 +107,47 @@ CREATE TABLE "ProviderUsage" (
 );
 
 -- CreateIndex
-CREATE INDEX "ChecklistItem_sectionCode_idx" ON "ChecklistItem"("sectionCode");
+CREATE INDEX IF NOT EXISTS "ChecklistItem_sectionCode_idx" ON "ChecklistItem"("sectionCode");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Company_cin_key" ON "Company"("cin");
+CREATE UNIQUE INDEX IF NOT EXISTS "Company_cin_key" ON "Company"("cin");
 
 -- CreateIndex
-CREATE INDEX "Company_name_idx" ON "Company"("name");
+CREATE INDEX IF NOT EXISTS "Company_name_idx" ON "Company"("name");
 
 -- CreateIndex
-CREATE INDEX "Company_ticker_idx" ON "Company"("ticker");
+CREATE INDEX IF NOT EXISTS "Company_ticker_idx" ON "Company"("ticker");
 
 -- CreateIndex
-CREATE INDEX "AnalysisRun_companyId_idx" ON "AnalysisRun"("companyId");
+CREATE INDEX IF NOT EXISTS "AnalysisRun_companyId_idx" ON "AnalysisRun"("companyId");
 
 -- CreateIndex
-CREATE INDEX "AnalysisRun_status_idx" ON "AnalysisRun"("status");
+CREATE INDEX IF NOT EXISTS "AnalysisRun_status_idx" ON "AnalysisRun"("status");
 
 -- CreateIndex
-CREATE INDEX "SourceDoc_runId_idx" ON "SourceDoc"("runId");
+CREATE INDEX IF NOT EXISTS "SourceDoc_runId_idx" ON "SourceDoc"("runId");
 
 -- CreateIndex
-CREATE INDEX "SourceDoc_fetchStatus_idx" ON "SourceDoc"("fetchStatus");
+CREATE INDEX IF NOT EXISTS "SourceDoc_fetchStatus_idx" ON "SourceDoc"("fetchStatus");
 
 -- CreateIndex
-CREATE INDEX "SourceDoc_runId_contentHash_idx" ON "SourceDoc"("runId", "contentHash");
+CREATE INDEX IF NOT EXISTS "SourceDoc_runId_contentHash_idx" ON "SourceDoc"("runId", "contentHash");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "SourceDoc_runId_sourceUrl_key" ON "SourceDoc"("runId", "sourceUrl");
+CREATE UNIQUE INDEX IF NOT EXISTS "SourceDoc_runId_sourceUrl_key" ON "SourceDoc"("runId", "sourceUrl");
 
 -- CreateIndex
-CREATE INDEX "ItemResult_runId_idx" ON "ItemResult"("runId");
+CREATE INDEX IF NOT EXISTS "ItemResult_runId_idx" ON "ItemResult"("runId");
 
 -- CreateIndex
-CREATE INDEX "ItemResult_status_idx" ON "ItemResult"("status");
+CREATE INDEX IF NOT EXISTS "ItemResult_status_idx" ON "ItemResult"("status");
 
 -- CreateIndex
-CREATE INDEX "ItemResult_flag_idx" ON "ItemResult"("flag");
+CREATE INDEX IF NOT EXISTS "ItemResult_flag_idx" ON "ItemResult"("flag");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ItemResult_runId_itemId_key" ON "ItemResult"("runId", "itemId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ItemResult_runId_itemId_key" ON "ItemResult"("runId", "itemId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ProviderUsage_provider_date_key" ON "ProviderUsage"("provider", "date");
+CREATE UNIQUE INDEX IF NOT EXISTS "ProviderUsage_provider_date_key" ON "ProviderUsage"("provider", "date");
 
