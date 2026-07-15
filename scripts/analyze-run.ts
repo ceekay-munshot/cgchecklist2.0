@@ -247,9 +247,9 @@ async function main() {
   // artifact, which takes several seconds. If the run sat in DONE during that
   // window, the loading screen could open a HALF-FILLED report (blanks not yet
   // MUNS-backfilled). Flipping to PROCESSING first closes that window.
-  if (process.env.MUNS_TOKEN && outcome.status === "DONE") {
+  if ((process.env.MUNS_TOKEN || process.env.QA_REVIEW) && outcome.status === "DONE") {
     await prisma.analysisRun.update({ where: { id: runId }, data: { status: "PROCESSING" } }).catch(() => {});
-    console.log("Deferring DONE until MUNS backfill completes.");
+    console.log("Deferring DONE until MUNS backfill / QA self-audit completes.");
   }
 
   await writeReport(runId, outcome);

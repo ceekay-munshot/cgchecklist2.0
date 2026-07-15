@@ -47,6 +47,8 @@ jobs:
       MUNS_TOKEN: ${{ secrets.MUNS_TOKEN }}
       USER_INDEX: ${{ secrets.USER_INDEX }}
       CONTEXT_EMAIL: ${{ secrets.CONTEXT_EMAIL }}
+      # Final self-audit stage: auto-corrects clear report bugs before finalizing.
+      QA_REVIEW: "1"
       # Optional: force a low daily cap to exercise the PARTIAL→resume path, e.g.
       # LLM_DAILY_CAP: "20"
 
@@ -98,6 +100,13 @@ jobs:
         env:
           TICKER: ${{ inputs.ticker }}
         run: npm run muns-backfill -- "$TICKER"
+
+      # Final self-audit: clear report bugs, then finalize the run to DONE.
+      - name: Self-audit (QA) ${{ inputs.ticker }}
+        if: always()
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: npm run qa-review -- "$TICKER"
 
       - name: Upload analysis report
         if: always()
