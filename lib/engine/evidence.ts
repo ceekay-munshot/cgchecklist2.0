@@ -335,20 +335,27 @@ export const WEB_ONLY_ITEMS: Record<string, string> = {
   "A13-07": "promoter other businesses group companies interests",
   "A13-08": "company government dealings sensitive regulatory contracts",
   "A13-09": "promoter political connections affiliations",
+  // Director reputation: google EACH board member (especially independent directors)
+  // by NAME for any legal case / fraud / regulatory action elsewhere — the filing
+  // only lists their seats, never their baggage (e.g. an independent director named
+  // in an SBI-loan case). Web-primary + person-name search (see below).
+  "A1-05": "independent director board member background legal case fraud SEBI CBI arrest bail controversy at other companies",
 };
 
 /**
- * Items that, by definition, look at the PROMOTER's conduct at OTHER entities —
- * their track record elsewhere (A9-04), earlier/other ventures and vintage
- * (A13-03), and other material businesses (A13-07). The relevant web hit is about
- * a DIFFERENT company linked by the promoter, so applying the subject-company
- * relevance filter (webHitRelevant) would wrongly drop exactly the signal we want
- * (e.g. "the promoter's earlier firm collapsed amid loan defaults" that never
- * names this company). For these, keep only the blocked-host filter, and tell the
- * extractor it MAY report facts about the promoter's other entities. The finding
- * is still web-sourced → carried at low confidence and cross-checked before any RED.
+ * PERSON-history items: they look at a named PERSON's conduct at OTHER entities —
+ * a promoter's track record elsewhere (A9-04), earlier/other ventures (A13-03),
+ * other material businesses (A13-07), the CEO's credibility (A13-02), and each
+ * DIRECTOR's reputation (A1-05, e.g. an independent director named in a loan-fraud
+ * case). The relevant web hit is about a DIFFERENT company linked by the person, so
+ * the subject-company relevance filter would wrongly drop exactly the signal we want
+ * ("the director was arrested in the SBI case" — never names this company). For
+ * these we skip that filter, search each person BY NAME, and tell the extractor it
+ * MAY report facts about the person's other entities. Web-sourced → low confidence
+ * and cross-checked before any RED. (Kept as one exported set for the routing +
+ * grounding + name-search paths that all key off it.)
  */
-export const PROMOTER_ELSEWHERE_ITEMS = new Set<string>(["A9-04", "A13-02", "A13-03", "A13-07"]);
+export const PROMOTER_ELSEWHERE_ITEMS = new Set<string>(["A1-05", "A9-04", "A13-02", "A13-03", "A13-07"]);
 
 function defaultDocTypesForSection(sectionCode: string): SourceDocType[] {
   if (sectionCode === "A13") return ["EARNINGS_PDF", "ANNUAL_REPORT"];
@@ -521,46 +528,93 @@ const NAMES_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+/** Clean a raw name list: strip honorifics, keep two-word person names, de-dupe. */
+function cleanNames(raw: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of raw) {
+    const n = (r ?? "").replace(/^(mr|ms|mrs|dr|capt|shri|smt|prof)\.?\s+/i, "").trim();
+    if (n.length >= 4 && /\s/.test(n) && !seen.has(n.toLowerCase())) {
+      seen.add(n.toLowerCase());
+      out.push(n);
+    }
+  }
+  return out;
+}
+
+/** Promoter/director names from the harvested annual-report board/promoter section. */
+async function boardNamesFromFilings(runId: string, companyName: string): Promise<string[]> {
+  try {
+    const docs = await prisma.sourceDoc.findMany({
+      where: { runId, fetchStatus: "OK", extractedText: { not: null }, type: { not: "SCREENER_PAGE" } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!docs.length) return [];
+    const passages = extractSectionPassages(
+      docs,
+      ["board of directors", "promoter", "promoters", "directors", "shareholding pattern"],
+      6000,
+      3000,
+    );
+    if (!passages.length) return [];
+    const prompt =
+      `From these annual-report excerpts for ${companyName}, list the FULL NAMES of the PROMOTERS and BOARD ` +
+      `DIRECTORS — individual PEOPLE only (never company / entity names). Return a JSON array "names".\n\n` +
+      passages.map((x) => x.text).join("\n---\n").slice(0, 8000);
+    const { data } = await callJSON<{ names: string[] }>("bulkClassify", { prompt, temperature: 0 }, NAMES_SCHEMA);
+    return data.names ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The CURRENT board from the web. The latest published annual report LAGS — a
+ * director appointed after it (a freshly-inducted independent director) won't be in
+ * the filing at all, so relying on the AR alone silently skips exactly the person
+ * who might carry a live legal issue. A quick web lookup recovers the current board.
+ */
+async function currentBoardFromWeb(company: Company | null): Promise<string[]> {
+  try {
+    if (!company?.name && !company?.ticker) return [];
+    const query = buildWebQuery(company, "current board of directors independent directors");
+    const res = await webResearcher.search(query);
+    if (res.status !== "ok" || !res.results.length) return [];
+    const text = res.results
+      .slice(0, 5)
+      .map((h) => `${h.title ?? ""} ${h.snippet ?? ""}`)
+      .join("\n")
+      .slice(0, 4000);
+    if (!text.trim()) return [];
+    const { data } = await callJSON<{ names: string[] }>(
+      "bulkClassify",
+      {
+        prompt:
+          `From these web snippets about ${company?.name ?? "the company"}'s board, list the FULL NAMES of the ` +
+          `CURRENT board directors — individual PEOPLE only. Return a JSON array "names".\n\n${text}`,
+        temperature: 0,
+      },
+      NAMES_SCHEMA,
+    );
+    return data.names ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export function loadSubjectPeople(runId: string): Promise<string[]> {
   const cached = peopleCache.get(runId);
   if (cached) return cached;
   const p = (async () => {
-    try {
-      const company = await loadCompany(runId);
-      const docs = await prisma.sourceDoc.findMany({
-        where: { runId, fetchStatus: "OK", extractedText: { not: null }, type: { not: "SCREENER_PAGE" } },
-        orderBy: { createdAt: "asc" },
-      });
-      if (!docs.length) return [];
-      const passages = extractSectionPassages(
-        docs,
-        ["board of directors", "promoter", "promoters", "directors", "shareholding pattern"],
-        6000,
-        3000,
-      );
-      if (!passages.length) return [];
-      const prompt =
-        `From these annual-report excerpts for ${company?.name ?? "the company"}, list the FULL NAMES of the ` +
-        `PROMOTERS and BOARD DIRECTORS — individual PEOPLE only (never company / entity names). Strip honorifics ` +
-        `(Mr/Ms/Dr/Capt). Return a JSON array "names".\n\n` +
-        passages
-          .map((x) => x.text)
-          .join("\n---\n")
-          .slice(0, 8000);
-      const { data } = await callJSON<{ names: string[] }>("bulkClassify", { prompt, temperature: 0 }, NAMES_SCHEMA);
-      const seen = new Set<string>();
-      const names: string[] = [];
-      for (const raw of data.names ?? []) {
-        const n = raw.replace(/^(mr|ms|mrs|dr|capt|shri|smt)\.?\s+/i, "").trim();
-        if (n.length >= 4 && /\s/.test(n) && !seen.has(n.toLowerCase())) {
-          seen.add(n.toLowerCase());
-          names.push(n);
-        }
-      }
-      return names.slice(0, 5);
-    } catch {
-      return []; // best-effort: names only ENHANCE the search
-    }
+    const company = await loadCompany(runId).catch(() => null);
+    // Current board (web) FIRST so recent appointees rank ahead of the stale AR list,
+    // then the annual-report names. Both best-effort — either empty → the other still
+    // works; both empty → company-anchored search (no regression).
+    const [webNames, filingNames] = await Promise.all([
+      currentBoardFromWeb(company),
+      boardNamesFromFilings(runId, company?.name ?? "the company"),
+    ]);
+    return cleanNames([...webNames, ...filingNames]).slice(0, 6);
   })();
   peopleCache.set(runId, p);
   return p;

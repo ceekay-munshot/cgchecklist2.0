@@ -653,13 +653,15 @@ const GROUNDING_SUBJECT =
 // companies/ventures, so a fact about a DIFFERENT company IS the answer — as long
 // as it is tied to THIS company's promoter/founder. Still strictly excerpt-bound.
 const GROUNDING_CROSS_ENTITY =
-  `GROUNDING (cross-entity item): this item assesses the PROMOTER/FOUNDER's track ` +
-  `record at OTHER companies and ventures — so a fact about a DIFFERENT company IS ` +
-  `relevant when the excerpts tie it to this company's promoter/founder (their ` +
-  `earlier/other businesses, defaults, frauds, or wind-ups elsewhere). Report it, ` +
-  `naming that other entity. Stay STRICTLY grounded in the excerpts — no invented ` +
-  `cases and no facts from your own training knowledge; every claim must be linked ` +
-  `to the named promoter/founder, not merely a same-named stranger.\n`;
+  `GROUNDING (cross-entity item): this item assesses a named PERSON's track record — ` +
+  `this company's PROMOTER, FOUNDER, CEO or a DIRECTOR — at OTHER companies and roles. ` +
+  `So a fact about a DIFFERENT company or entity IS relevant when the excerpts tie it ` +
+  `to one of this company's named people (their earlier/other businesses, defaults, ` +
+  `frauds, wind-ups, or a legal case / regulatory action elsewhere — e.g. a director ` +
+  `named in a loan-fraud case at another institution). Report it, naming the person ` +
+  `and that other entity. Stay STRICTLY grounded in the excerpts — no invented cases ` +
+  `and no facts from your own training knowledge; every claim must be linked to a ` +
+  `NAMED person of this company, not merely a same-named stranger.\n`;
 
 const RATIONALE_TAIL =
   `FRESHNESS: use the MOST RECENT fiscal year present in the excerpts; if several ` +
@@ -698,10 +700,11 @@ async function analyzeQualitative(item: EngineItem, evidence: Evidence): Promise
   // answer (as long as it concerns this company's promoter), so we must NOT reject it
   // for naming another entity — only reject truly unrelated people/companies.
   const companyGate = crossEntity
-    ? `OR (b) they are about a person/company UNRELATED to this company's promoter/` +
-      `founder. NOTE: this item is about the promoter's OTHER ventures, so a passage ` +
-      `about a DIFFERENT company IS relevant when it concerns this company's promoter/` +
-      `founder — do NOT reject it merely for naming another company.`
+    ? `OR (b) they are about a person/company UNRELATED to this company's promoter, ` +
+      `founder, CEO or directors. NOTE: this item is about a named person's conduct at ` +
+      `OTHER companies, so a passage about a DIFFERENT company IS relevant when it ` +
+      `concerns one of this company's named people (promoter / founder / CEO / director) ` +
+      `— do NOT reject it merely for naming another company.`
     : `OR (b) they are about a DIFFERENT company than the one under ` +
       `review — a same/similar-named entity, OR a peer/comparable/competitor named for ` +
       `benchmarking (e.g. a comps table in a deck) — rather than this company or its ` +

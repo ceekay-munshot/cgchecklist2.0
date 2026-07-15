@@ -205,7 +205,7 @@ describe("analyzeItem", () => {
     expect(a.confidence).toBe("low"); // web-sourced
     const prompt = asMock(llm.reasoning.completeJSON).mock.calls[0][0].prompt as string;
     expect(prompt).toMatch(/cross-entity/i);
-    expect(prompt).toMatch(/other ventures/i);
+    expect(prompt).toMatch(/other companies/i);
     // the relevance gate must NOT tell it to reject a differently-named company here
     expect(prompt).not.toMatch(/comps table in a deck/i);
   });
