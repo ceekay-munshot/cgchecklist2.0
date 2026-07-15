@@ -118,33 +118,66 @@ async function upsertSourceDoc(runId: string, d: UpsertInput): Promise<void> {
   });
 }
 
+/** Build the consolidated + standalone URLs for a resolved "/company/<x>/" path. */
+function candidatesFromPath(path: string): string[] {
+  const clean = path.replace(/\/+$/, "");
+  return [`${SCREENER_BASE}${clean}/consolidated/`, `${SCREENER_BASE}${clean}/`];
+}
+
 async function fetchScreenerPage(
   session: ScreenerSession | null,
   ticker: string,
   knownUrl: string | null,
+  name?: string | null,
 ): Promise<{ url: string; html: string; ok: boolean; note?: string }> {
   const fallback = companyUrlCandidates(ticker)[1];
   if (!session) {
     return { url: fallback, html: "", ok: false, note: "browser session unavailable" };
   }
-  const candidates = knownUrl
-    ? [knownUrl, ...companyUrlCandidates(ticker)]
-    : companyUrlCandidates(ticker);
   const tried = new Set<string>();
   let note: string | undefined;
-  for (const url of candidates) {
-    if (tried.has(url)) continue;
-    tried.add(url);
-    try {
-      const r = await session.fetchRenderedHtml(url);
-      if (r.ok && looksLikeCompanyPage(r.html)) {
-        return { url: r.finalUrl || url, html: r.html, ok: true };
+
+  const tryUrls = async (
+    urls: string[],
+  ): Promise<{ url: string; html: string; ok: true } | null> => {
+    for (const url of urls) {
+      if (tried.has(url)) continue;
+      tried.add(url);
+      try {
+        const r = await session.fetchRenderedHtml(url);
+        if (r.ok && looksLikeCompanyPage(r.html)) {
+          return { url: r.finalUrl || url, html: r.html, ok: true };
+        }
+        note = `HTTP ${r.status} at ${url}`;
+      } catch (e) {
+        note = `${(e as Error).message} at ${url}`;
       }
-      note = `HTTP ${r.status} at ${url}`;
-    } catch (e) {
-      note = `${(e as Error).message} at ${url}`;
+    }
+    return null;
+  };
+
+  // 1) The known URL (from a prior successful harvest) + the guessed ticker URLs.
+  const direct = knownUrl
+    ? [knownUrl, ...companyUrlCandidates(ticker)]
+    : companyUrlCandidates(ticker);
+  const hit = await tryUrls(direct);
+  if (hit) return hit;
+
+  // 2) The guessed URL 404'd — resolve the REAL page via Screener's search API
+  //    (Screener lists many companies, esp. BSE-only ones, under a numeric code:
+  //    AFCOM → /company/544224/). Try the ticker, then the company name.
+  for (const q of [ticker, name ?? ""]) {
+    if (!q.trim()) continue;
+    const results = await session.searchCompany(q);
+    const best = results[0];
+    if (best?.url) {
+      const resolved = await tryUrls(candidatesFromPath(best.url));
+      if (resolved) {
+        return { ...resolved, note: `resolved "${q}" → ${best.url} (${best.name})` };
+      }
     }
   }
+
   return { url: fallback, html: "", ok: false, note };
 }
 
@@ -202,7 +235,7 @@ export async function harvestCompany({
       where: { runId_sourceUrl: { runId, sourceUrl: canonicalUrl } },
     });
 
-    const fetched = await fetchScreenerPage(session, ticker, company.screenerUrl ?? null);
+    const fetched = await fetchScreenerPage(session, ticker, company.screenerUrl ?? null, company.name);
 
     if (fetched.ok && fetched.html) {
       summary.screenerUrl = fetched.url;
