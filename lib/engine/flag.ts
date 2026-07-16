@@ -209,7 +209,10 @@ export async function assignFlag(
 
   // Integrity-absence guard: on a promoter/management-integrity item, "nothing
   // adverse found" is ABSENCE of evidence, not a clean record — never let it stand
-  // as a confident GREEN. Downgrade to NEUTRAL with an explicit corroborate note.
+  // as a confident GREEN. Downgrade to NEUTRAL with a self-consistent note that
+  // EXPLAINS the flag. NB: do NOT echo the judge's own GREEN reason here — it argues
+  // "…satisfies the green condition", which read as a NEUTRAL flag contradicting its
+  // own verdict in the report. The note must justify the NEUTRAL, not undercut it.
   if (
     INTEGRITY_ABSENCE_ITEMS.has(item.id) &&
     judged.flag === "GREEN" &&
@@ -218,9 +221,11 @@ export async function assignFlag(
     return applyGate(item, {
       flag: "NEUTRAL",
       reason:
-        `No adverse record surfaced in research — this is ABSENCE of evidence, not a ` +
-        `confirmed clean record. Corroborate against news / Valuepickr / MCA / court & ` +
-        `tribunal records before treating the promoter's track record as clean. (${judged.reason})`,
+        `No adverse record surfaced in the searches run. Held NEUTRAL (not GREEN) ` +
+        `because this is the ABSENCE of an adverse record, not an independently ` +
+        `confirmed clean one — a news/web search can miss history. Corroborate against ` +
+        `news / Valuepickr / MCA / court & tribunal records before relying on a clean ` +
+        `track record.`,
       provider: judged.provider,
     });
   }

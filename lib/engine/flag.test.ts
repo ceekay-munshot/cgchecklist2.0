@@ -122,14 +122,22 @@ describe("assignFlag", () => {
   it("INTEGRITY ABSENCE: 'no adverse record found' on A9-04 is NEUTRAL, not a false GREEN", async () => {
     // The AFCOM miss: research found nothing on the promoter → judge greens the
     // "nil" finding → false all-clear. The guard downgrades it to NEUTRAL.
-    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({ flag: "GREEN", reason: "No adverse record, so clean." });
+    asMock(llm.reasoning.completeJSON).mockResolvedValueOnce({
+      flag: "GREEN",
+      reason: "The finding indicates no adverse record, which satisfies the green condition.",
+    });
     const r = await assignFlag(
       item({ id: "A9-04", outputFormat: "Text", greenFlag: "Clean", redFlag: "Past defaults/frauds elsewhere" }),
       { value: "Promoters have no verified external track record elsewhere", confidence: "low" },
       { web: true },
     );
     expect(r.flag).toBe("NEUTRAL");
-    expect(r.reason).toMatch(/absence of evidence|corroborate/i);
+    expect(r.reason).toMatch(/corroborate/i);
+    // The NEUTRAL note must EXPLAIN the flag, never echo the judge's GREEN reasoning
+    // (that self-contradiction — a NEUTRAL flag whose verdict says "satisfies the
+    // green condition" — was the reported report bug).
+    expect(r.reason).toMatch(/held neutral \(not green\)/i);
+    expect(r.reason).not.toMatch(/satisfies the green condition/i);
   });
 
   it("INTEGRITY ABSENCE: a REAL adverse finding on A9-04 still fires RED (guard only touches absence)", async () => {
