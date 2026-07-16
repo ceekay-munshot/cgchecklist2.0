@@ -6,18 +6,22 @@ import type {
 } from "./types";
 import { firecrawl } from "./firecrawl";
 import { scrapedo } from "./scrapedo";
+import { munsTools } from "./munsTools";
 
 export * from "./types";
 export { firecrawl } from "./firecrawl";
 export { scrapedo } from "./scrapedo";
+export { munsTools } from "./munsTools";
 
 /** All researcher modules, keyed by id (used by /health). */
-export const researchers: Record<string, ResearchModule> = { firecrawl, scrapedo };
+export const researchers: Record<string, ResearchModule> = { firecrawl, scrapedo, munsTools };
 
 // Scrape.do is primary (it does "the most" — URL/document fetching — cheaply);
-// Firecrawl is the fallback for fetch AND the only provider that can SEARCH, so
-// search() automatically falls through Scrape.do (no search api) to Firecrawl.
-const CHAIN: ResearchModule[] = [scrapedo, firecrawl];
+// Firecrawl is the fallback for fetch AND (until now) the only provider that can
+// SEARCH. MUNS tools (controlled web-search + reader + news) are appended LAST as
+// an additive fallback: they only run when the others return nothing, so nothing
+// currently answered changes — they purely fill gaps (esp. reputation / unlisted).
+const CHAIN: ResearchModule[] = [scrapedo, firecrawl, munsTools];
 
 /**
  * The composed researcher: tries Scrape.do first, then falls back to Firecrawl,
