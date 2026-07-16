@@ -22,7 +22,7 @@ export function ReportView({ report }: { report: CompanyReport }) {
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const [query, setQuery] = useState("");
   const slug = encodeURIComponent(report.ticker ?? report.runId);
-  const { launch, busy, overlay } = useAnalyzeRun();
+  const { launch, reanalyseRun, busy, overlay } = useAnalyzeRun();
 
   const totals = report.summary?.totals ?? { green: 0, red: 0, neutral: 0, na: 0 };
   const gatePass = report.summary?.nonNegotiable?.gatePass ?? null;
@@ -104,9 +104,17 @@ export function ReportView({ report }: { report: CompanyReport }) {
                 <span>📊</span> Export to Excel
               </a>
               <button
-                onClick={() => report.ticker && launch(report.ticker, { force: true })}
-                disabled={busy || !report.ticker}
-                title="Run a fresh analysis now (ignores the 90-day cache)"
+                onClick={() =>
+                  report.ticker
+                    ? launch(report.ticker, { force: true })
+                    : reanalyseRun(report.runId, { label: report.company })
+                }
+                disabled={busy}
+                title={
+                  report.ticker
+                    ? "Run a fresh analysis now (ignores the 90-day cache)"
+                    : "Re-analyse this company on its uploaded documents (unlisted — no re-upload needed)"
+                }
                 className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>🔄</span> {busy ? "Starting…" : "Re-analyse"}

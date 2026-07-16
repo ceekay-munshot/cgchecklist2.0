@@ -95,11 +95,13 @@ export async function triggerAnalysisWorkflow(
 }
 
 /**
- * Analyse an ALREADY-INGESTED run (unlisted uploads) — no Screener harvest.
- * Dispatches analyze-run.yml, whose script resolves the arg as a runId and
- * processes the run's stored SourceDocs, then the MUNS fill.
+ * Analyse an ALREADY-INGESTED run (unlisted uploads, or a re-analyse) — no
+ * Screener harvest. Dispatches analyze-run.yml, whose script resolves the arg as a
+ * runId and processes the run's stored SourceDocs, then the MUNS fill. Pass
+ * `force` to re-evaluate ALL items (a re-analyse of a DONE run, e.g. after an
+ * engine fix), not just resume the unfinished ones.
  */
-export async function triggerRunAnalysis(runId: string): Promise<DispatchResult> {
+export async function triggerRunAnalysis(runId: string, opts: { force?: boolean } = {}): Promise<DispatchResult> {
   const workflow = process.env.GITHUB_ANALYZE_RUN_WORKFLOW || "analyze-run.yml";
-  return dispatchWorkflow(workflow, { ticker: runId, force: "false" });
+  return dispatchWorkflow(workflow, { ticker: runId, force: opts.force ? "true" : "false" });
 }

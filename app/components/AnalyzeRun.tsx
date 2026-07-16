@@ -161,6 +161,33 @@ export function useAnalyzeRun() {
     [poll, stopPolling],
   );
 
+  // Re-analyse an EXISTING run in place (force) on its already-harvested docs —
+  // used by the report page's Re-analyse button for UNLISTED companies (no ticker,
+  // so /api/analyze can't serve them). POSTs /api/analyze/run, then polls by runId.
+  const reanalyseRun = useCallback(
+    async (runId: string, opts: { label?: string } = {}) => {
+      const id = runId.trim();
+      if (!id || busy) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/analyze/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: id }),
+        });
+        const data: { dispatched?: boolean; dispatchError?: string; error?: string } = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Could not start re-analysis.");
+        launchByRun(id, { label: opts.label, dispatched: data.dispatched !== false, dispatchError: data.dispatchError });
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, launchByRun],
+  );
+
   const closeModal = useCallback(() => {
     stopPolling();
     setModal(null);
@@ -177,7 +204,7 @@ export function useAnalyzeRun() {
     />
   ) : null;
 
-  return { launch, launchByRun, busy, error, overlay };
+  return { launch, launchByRun, reanalyseRun, busy, error, overlay };
 }
 
 // ---------------------------------------------------------------------------
