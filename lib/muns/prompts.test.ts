@@ -1,11 +1,30 @@
 import { describe, it, expect } from "vitest";
-import { MEGA_PROMPT, SUFFIX, letterFor, formatQuestion, parseAnswer, extractSourceUrls } from "@/lib/muns/prompts";
+import {
+  MEGA_PROMPT,
+  SUFFIX,
+  megaPrompt,
+  mentionsForeignCompany,
+  extractCompanyNames,
+  letterFor,
+  formatQuestion,
+  parseAnswer,
+  extractSourceUrls,
+} from "@/lib/muns/prompts";
 import { binPackSections, type LaneSection } from "@/lib/muns/lanes";
 
 describe("prompts", () => {
   it("mega prompt ends with the suffix", () => {
     expect(MEGA_PROMPT.endsWith(SUFFIX)).toBe(true);
     expect(SUFFIX.startsWith(" ")).toBe(true); // literal leading space
+  });
+
+  it("megaPrompt anchors to the company + forbids substitution; empty falls back to MEGA_PROMPT", () => {
+    const p = megaPrompt("Metal Book Private Limited");
+    expect(p).toContain("Metal Book Private Limited");
+    expect(p).toMatch(/do NOT answer about, or substitute data from, any other company/i);
+    expect(p.endsWith(SUFFIX)).toBe(true);
+    expect(megaPrompt("")).toBe(MEGA_PROMPT);
+    expect(megaPrompt(undefined)).toBe(MEGA_PROMPT);
   });
 
   it("letters go a..z then aa, ab", () => {
@@ -65,6 +84,44 @@ describe("extractSourceUrls — harvest citations before cleanup() drops them", 
   it("returns [] for a filing-style doc_source with no URL (no regression)", () => {
     expect(extractSourceUrls("<ans>Clean<doc_source>Annual Report p.12</doc_source></ans>")).toEqual([]);
     expect(extractSourceUrls("")).toEqual([]);
+  });
+});
+
+describe("mentionsForeignCompany — the MetalBook→AFCOM leak gate", () => {
+  const TARGET = "Metal Book"; // the run's company; MUNS drifted to AFCOM Holdings
+
+  // Verbatim strings from the leaked report — each must be rejected as foreign.
+  const LEAKED = [
+    "AFCOM HOLDINGS Limited had 1,80,21,306 equity shares outstanding as of 31 March 2024, with no separate class of differential voting rights shares identified.",
+    "Captain Deepak Parasuraman holds both the Chairman and Managing Director positions at AFCOM Holdings Ltd as of 16-Jul-2026.",
+    "AFCOM Holdings Limited reported related-party transactions totaling ₹51.24 lakh in FY2024-25, all asserted to be at arm's length.",
+    "Afcom Holdings Limited reported no outstanding direct tax disputes as of 31 March 2026, with a declared exposure of ₹0.00 crore.",
+  ];
+  it("rejects answers that are actually about AFCOM when the company is Metal Book", () => {
+    for (const a of LEAKED) expect(mentionsForeignCompany(a, TARGET)).toBe(true);
+  });
+
+  it("keeps a genuine on-target answer (names the company, incl. run-together / subsidiary spelling)", () => {
+    expect(mentionsForeignCompany("Metal Book Private Limited reported revenue of ₹204 crore in FY2025.", TARGET)).toBe(false);
+    expect(mentionsForeignCompany("MetalBook Logistics Private Limited is a wholly-owned subsidiary.", TARGET)).toBe(false);
+  });
+
+  it("keeps a generic answer with no company named (a valid nil / not-found)", () => {
+    expect(mentionsForeignCompany("No fraud, default, ban or disqualification was found for the directors.", TARGET)).toBe(false);
+    expect(mentionsForeignCompany("Nil", TARGET)).toBe(false);
+  });
+
+  it("does NOT trip on an auditor / advisory firm the answer merely cites (LLP / & Co excluded)", () => {
+    expect(mentionsForeignCompany("The statutory auditor M M Nissim & Co LLP issued an unmodified opinion.", TARGET)).toBe(false);
+    expect(mentionsForeignCompany("Secretarial audit is conducted by M/s. S.A.E. & Associates LLP.", TARGET)).toBe(false);
+  });
+
+  it("no target name → gate is inert (never rejects)", () => {
+    expect(mentionsForeignCompany("AFCOM Holdings Limited reported ...", "")).toBe(false);
+  });
+
+  it("extractCompanyNames finds corporate-suffixed subjects", () => {
+    expect(extractCompanyNames("AFCOM Holdings Limited and Tata Consultancy Services Limited")).toContain("AFCOM Holdings Limited");
   });
 });
 

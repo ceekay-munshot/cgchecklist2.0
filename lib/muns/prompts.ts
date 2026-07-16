@@ -12,6 +12,94 @@ export const MEGA_PROMPT =
   "Make structured tables answering the below questions for the company . If an answer is Not established or Not available in the annual report - Quickly Websearch and find it . Keep each answer specific to the company with exact figures, names and dates - never generic . State the finding directly and crisply : give the fact itself with the key number(s) . Do NOT narrate the evidence, the sources or the search process, and do NOT say what a report 'does or does not disclose' - just answer . No hedging, no filler . Use the exact name of the ceo/company/elements in each answer only . DOUBLE CHECK AND VERIFY EACH ANSWER BEFORE ANSWERING." +
   SUFFIX;
 
+/**
+ * The mega prompt ANCHORED to a specific company. The bare MEGA_PROMPT never
+ * names the company ("for the company ."), so MUNS identifies it only from the
+ * query_context — and for an obscure/unlisted name it can't resolve, it DRIFTS to
+ * a different company and returns that firm's data (the MetalBook→AFCOM leak).
+ * Naming the company here, and forbidding substitution, keeps every answer on the
+ * requested company or an honest "Not available". Falls back to MEGA_PROMPT when
+ * no name is available. SUFFIX-terminated like MEGA_PROMPT.
+ */
+export function megaPrompt(companyName?: string): string {
+  const name = (companyName ?? "").trim();
+  if (!name) return MEGA_PROMPT;
+  return (
+    `Make structured tables answering the below questions for ${name}. ` +
+    `EVERY answer must be about ${name} SPECIFICALLY — the single company named "${name}". If you cannot ` +
+    `find information about ${name} itself, answer "Not available"; do NOT answer about, or substitute data ` +
+    `from, any other company, however similarly named. ` +
+    `If an answer is Not established or Not available in the annual report - Quickly Websearch and find it . ` +
+    `Keep each answer specific to the company with exact figures, names and dates - never generic . ` +
+    `State the finding directly and crisply : give the fact itself with the key number(s) . ` +
+    `Do NOT narrate the evidence, the sources or the search process, and do NOT say what a report ` +
+    `'does or does not disclose' - just answer . No hedging, no filler . ` +
+    `Use the exact name of the ceo/company/elements in each answer only . ` +
+    `DOUBLE CHECK AND VERIFY EACH ANSWER BEFORE ANSWERING.` +
+    SUFFIX
+  );
+}
+
+// Corporate suffixes that mark the SUBJECT company of an answer. LLP / "& Co" /
+// "Associates" are deliberately EXCLUDED — those are auditors / law firms an answer
+// legitimately cites, not the company it's about, so they must not trip the gate.
+const CORP_SUFFIX = "Private\\s+Limited|Pvt\\.?\\s*Ltd\\.?|Holdings\\s+Limited|Holdings\\s+Ltd\\.?|Holdings|Limited|Ltd\\.?|Incorporated|Inc\\.?|Corporation|Corp\\.?";
+const COMPANY_NAME_RE = new RegExp(`((?:[A-Z][A-Za-z0-9&.]*\\s+){1,4}(?:${CORP_SUFFIX}))`, "g");
+
+/** Company-like proper names in a text (phrases ending in a corporate suffix). */
+export function extractCompanyNames(text: string): string[] {
+  if (!text) return [];
+  return [...text.matchAll(COMPANY_NAME_RE)].map((m) => m[1].trim());
+}
+
+/** Lowercase a company name and drop corporate-form words, so only the distinctive core remains. */
+function normalizeCompany(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/\b(private|limited|ltd|holdings|pvt|incorporated|inc|corporation|corp|company|co)\b/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Do two normalized company cores share a distinctive token / concatenated form? (Handles subsidiaries + spacing.) */
+function companiesRelated(aNorm: string, bNorm: string): boolean {
+  const a = aNorm.split(" ").filter((t) => t.length >= 3);
+  const b = bNorm.split(" ").filter((t) => t.length >= 3);
+  for (const x of a) for (const y of b) if (x.includes(y) || y.includes(x)) return true;
+  const ac = aNorm.replace(/ /g, "");
+  const bc = bNorm.replace(/ /g, "");
+  return ac.length >= 4 && bc.length >= 4 && (ac.includes(bc) || bc.includes(ac));
+}
+
+/**
+ * True when a MUNS answer is about a DIFFERENT company than `targetName` — i.e. it
+ * never names the target yet prominently names another company. Used to drop leaked
+ * answers so a foreign firm's data never enters the report (the item stays NA).
+ * Conservative: a generic answer (no company named) or one that mentions the target
+ * is kept; only a clearly foreign-subject answer is rejected.
+ */
+export function mentionsForeignCompany(answer: string, targetName: string): boolean {
+  const target = normalizeCompany(targetName);
+  if (!target || !answer) return false;
+  const lower = answer.toLowerCase();
+
+  // Target mentioned? concatenated name as a substring, or a distinctive (>=5-char)
+  // token as a whole word → treat the answer as on-target and keep it.
+  const stripped = lower.replace(/[^a-z0-9]+/g, "");
+  const targetConcat = target.replace(/ /g, "");
+  if (targetConcat.length >= 4 && stripped.includes(targetConcat)) return false;
+  for (const tok of target.split(" ").filter((t) => t.length >= 5)) {
+    if (new RegExp(`\\b${tok}\\b`).test(lower)) return false;
+  }
+
+  // Otherwise: is some OTHER (non-target) company named as the subject?
+  for (const name of extractCompanyNames(answer)) {
+    if (!companiesRelated(normalizeCompany(name), target)) return true;
+  }
+  return false;
+}
+
 const LETTERS = "abcdefghijklmnopqrstuvwxyz";
 
 /** a, b, …, z, aa, ab, … for the item index within a section. */

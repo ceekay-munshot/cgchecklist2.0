@@ -1,4 +1,4 @@
-import { MEGA_PROMPT, formatQuestion } from "./prompts";
+import { megaPrompt, formatQuestion } from "./prompts";
 import { munsCall, dateWindowForItem, type MunsEnv, type MunsQueryContext } from "./client";
 
 /**
@@ -55,10 +55,12 @@ async function runLane(
 ): Promise<LaneAnswer[]> {
   const out: LaneAnswer[] = [];
 
-  // 1) Mega prompt — opens the session (no chat_id, empty history).
-  const mega = await munsCall({ env, ctx, task: MEGA_PROMPT, chatHistory: [] });
+  // 1) Mega prompt — opens the session (no chat_id, empty history). ANCHOR it to
+  // the company so MUNS can't drift to a different firm for an obscure name.
+  const megaTask = megaPrompt(ctx.companyName);
+  const mega = await munsCall({ env, ctx, task: megaTask, chatHistory: [] });
   const chatId = mega.chatId;
-  const megaHistory = ["User: " + MEGA_PROMPT, "AI: " + mega.answer];
+  const megaHistory = ["User: " + megaTask, "AI: " + mega.answer];
 
   // 2) Each section: reset section history at the boundary.
   for (const sec of lane) {

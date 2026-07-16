@@ -103,4 +103,22 @@ describe("munsBackfill — company research cache reuse", () => {
     expect(laneAnswerIds().sort()).toEqual(["A1-05", "A9-04"]);
     expect(out.filled).toBe(2);
   });
+
+  it("identity gate: answers about a DIFFERENT company are dropped (item stays NA, not persisted/cached)", async () => {
+    // run.company.name is "Saregama" (beforeEach); MUNS drifts and returns AFCOM.
+    m(getCachedAnswers).mockResolvedValue(new Map());
+    m(runAllLanes).mockImplementation(async (sections: Array<{ params: Array<{ id: string }> }>) => {
+      const map = new Map();
+      for (const s of sections) for (const p of s.params) map.set(p.id, { id: p.id, answer: "AFCOM Holdings Limited reported ₹0 for this item.", ok: true, sources: [] });
+      return map;
+    });
+
+    const out = await munsBackfill("run1", {});
+
+    expect(out.filled).toBe(0);
+    expect(m(prisma.itemResult.upsert)).not.toHaveBeenCalled();
+    // Nothing foreign is written to the cache either.
+    const [, entries] = m(putCachedAnswers).mock.calls[0];
+    expect(entries).toEqual([]);
+  });
 });

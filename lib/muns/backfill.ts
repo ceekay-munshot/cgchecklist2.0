@@ -6,6 +6,7 @@ import { loadCompanyScale } from "@/lib/engine/evidence";
 import { fromPrismaItem, kindOf, serializeTable, type Evidence } from "@/lib/engine/types";
 import { summarize } from "@/lib/orchestrate";
 import { runAllLanes, type LaneSection } from "./lanes";
+import { mentionsForeignCompany } from "./prompts";
 import { munsConfigured, munsEnv, defaultDateWindow, dateWindowForItem, type MunsQueryContext } from "./client";
 import {
   getCachedAnswers,
@@ -155,6 +156,23 @@ export async function munsBackfill(
   // freshly-fetched ones (same analyzeItem → assignFlag path, same flag).
   for (const [itemId, c] of cached) {
     answers.set(itemId, { id: itemId, answer: c.answer, ok: true, sources: c.sources });
+  }
+
+  // Company-identity gate: MUNS can DRIFT to a different company (especially for an
+  // obscure/unlisted name it can't resolve) and return that firm's data — the
+  // MetalBook→AFCOM leak. Blank any answer that is about a different company so it
+  // never enters the report (the item stays an honest NA) and is never cached.
+  // Runs on cached answers too, so a pre-gate cached leak is caught on reuse.
+  // MUNS_IDENTITY_GATE=0 disables it.
+  if (process.env.MUNS_IDENTITY_GATE !== "0") {
+    let dropped = 0;
+    for (const [id, a] of answers) {
+      if (a.ok && a.answer && mentionsForeignCompany(a.answer, run.company.name)) {
+        answers.set(id, { ...a, ok: false, answer: "[Error] MUNS answer was about a different company" });
+        dropped++;
+      }
+    }
+    if (dropped) log(`MUNS identity gate: dropped ${dropped} answer(s) about a different company (kept ${run.company.name} only)`);
   }
 
   const scale = await loadCompanyScale(runId);
