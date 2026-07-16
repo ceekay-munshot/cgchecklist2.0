@@ -1,0 +1,119 @@
+# TEMPORARY diagnostic — probes the three MUNS tool endpoints (web-search,
+# news-search, web-reader) with the real MUNS_TOKEN secret so we can eyeball the
+# quality of results for Indian listed + unlisted companies BEFORE wiring them
+# into the analysis engine. It changes NO product code and touches NO database.
+#
+# It runs automatically when this file is pushed (paths-scoped), because a brand
+# new workflow_dispatch workflow is not dispatchable until it is on the default
+# branch. Re-run with a different company via the Actions tab once/if this is on
+# the default branch, or just edit COMPANIES below and push again.
+#
+# Safe by construction: the token is passed only via the Authorization header
+# (never printed; GitHub also masks secrets in logs). Every call is guarded so
+# one failure never hides the others.
+name: muns-tools-probe
+
+on:
+  push:
+    branches: [claude/trusting-allen-n3101z]
+    paths: ['.github/workflows/muns-tools-probe.yml']
+  workflow_dispatch:
+    inputs:
+      company:
+        description: "Single company to probe (overrides the default list)"
+        required: false
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      MUNS_TOKEN: ${{ secrets.MUNS_TOKEN }}
+      INPUT_COMPANY: ${{ github.event.inputs.company }}
+    steps:
+      - name: Probe MUNS tools (web-search / news-search / web-reader)
+        run: |
+          set -uo pipefail
+          if [ -z "${MUNS_TOKEN:-}" ]; then
+            echo "::error::MUNS_TOKEN secret is not set in this repository."
+            exit 1
+          fi
+
+          FROM_DATE=$(date -u -d '25 years ago' +%Y-%m-%d)
+          TO_DATE=$(date -u +%Y-%m-%d)
+          COUNTRY="India"
+
+          if [ -n "${INPUT_COMPANY:-}" ]; then
+            COMPANIES=("$INPUT_COMPANY")
+          else
+            COMPANIES=("Tata Consultancy Services" "Metalbook")
+          fi
+
+          echo "Window for news-search: ${FROM_DATE} .. ${TO_DATE} | country=${COUNTRY}"
+
+          # call <label> <endpoint> <json-body> <jq-filter>
+          call () {
+            local label="$1" endpoint="$2" body="$3" filter="$4"
+            echo ""
+            echo "----- ${label} -----"
+            local http
+            http=$(curl -sS -o resp.json -w '%{http_code}' -X POST "$endpoint" \
+              -H 'accept: application/json' \
+              -H "Authorization: Bearer ${MUNS_TOKEN}" \
+              -H 'Content-Type: application/json' \
+              -d "$body" --max-time 180)
+            local secs
+            echo "HTTP ${http}"
+            if [ "$http" != "200" ]; then
+              echo "(non-200 body:)"; head -c 600 resp.json; echo ""; return 0
+            fi
+            jq "$filter" resp.json 2>/dev/null || { echo "(raw, jq failed:)"; head -c 1500 resp.json; echo ""; }
+          }
+
+          for COMPANY in "${COMPANIES[@]}"; do
+            echo ""
+            echo "=================================================================="
+            echo "COMPANY: ${COMPANY}"
+            echo "=================================================================="
+
+            # 1) web-search — general governance profile (should be rich for any real co)
+            GEN_Q="${COMPANY} board of directors auditor promoter shareholding corporate governance"
+            BODY=$(jq -nc --arg q "$GEN_Q" --arg c "$COUNTRY" '{query:$q,country:$c}')
+            call "web-search (governance profile)" \
+              "https://hostapi.muns.io/tools/web-search" "$BODY" \
+              '{success, results_count, results: (.results[:6] // [] | map({title, link, snippet: ((.snippet // "")[:200])}))}'
+
+            # capture a top URL to feed the reader
+            TOP_URL=$(jq -r '.results[0].link // empty' resp.json)
+
+            # 2) web-search — adverse / red-flag hunt
+            ADV_Q="${COMPANY} SEBI action penalty litigation fraud pledge default resignation"
+            BODY=$(jq -nc --arg q "$ADV_Q" --arg c "$COUNTRY" '{query:$q,country:$c}')
+            call "web-search (adverse hunt)" \
+              "https://hostapi.muns.io/tools/web-search" "$BODY" \
+              '{success, results_count, results: (.results[:6] // [] | map({title, link, snippet: ((.snippet // "")[:200])}))}'
+
+            # 3) news-search — dated adverse events across a wide window (mirrors dateWindowForItem 25y)
+            NEWS_Q="${COMPANY} SEBI investigation litigation promoter resignation auditor fraud default"
+            BODY=$(jq -nc --arg q "$NEWS_Q" --arg c "$COUNTRY" --arg f "$FROM_DATE" --arg t "$TO_DATE" \
+              '{query:$q,country:$c,from_date:$f,to_date:$t}')
+            call "news-search (adverse, ${FROM_DATE}..${TO_DATE})" \
+              "https://hostapi.muns.io/tools/news-search" "$BODY" \
+              '{success, results_count, results: (.results[:8] // [] | map({title, age, page_age, url, description: ((.description // "")[:200])}))}'
+
+            # 4) web-reader — read the top governance URL, task-focused
+            if [ -n "${TOP_URL:-}" ]; then
+              TASK="Summarize any corporate governance signals for ${COMPANY}: board composition and independence, auditor, promoter/shareholding, and any regulatory or litigation history."
+              BODY=$(jq -nc --arg u "$TOP_URL" --arg task "$TASK" '{urls:[$u],task:$task}')
+              call "web-reader (${TOP_URL})" \
+                "https://hostapi.muns.io/tools/web-reader" "$BODY" \
+                '{success, urls_count, first_url: (.results[0].url // null), content_preview: ((.results[0].content // "")[:2500])}'
+            else
+              echo ""
+              echo "----- web-reader -----"
+              echo "(skipped — no top URL from web-search)"
+            fi
+          done
+
+          echo ""
+          echo "Probe complete."
