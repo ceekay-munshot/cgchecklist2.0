@@ -6,7 +6,14 @@ import { loadCompanyScale } from "@/lib/engine/evidence";
 import { fromPrismaItem, kindOf, serializeTable, type Evidence } from "@/lib/engine/types";
 import { summarize } from "@/lib/orchestrate";
 import { runAllLanes, type LaneSection } from "./lanes";
-import { munsConfigured, munsEnv, defaultDateWindow, type MunsQueryContext } from "./client";
+import { munsConfigured, munsEnv, defaultDateWindow, dateWindowForItem, type MunsQueryContext } from "./client";
+import {
+  getCachedAnswers,
+  putCachedAnswers,
+  planMunsResearch,
+  type CachedAnswer,
+  type MunsCacheEntry,
+} from "./cache";
 
 /**
  * MUNS backfill — fill the REMAINING (currently NOT_AVAILABLE) parameters.
@@ -58,9 +65,15 @@ export interface BackfillOutcome {
   byFlag: Record<string, number>;
 }
 
+/** True when a forced re-research is requested (bypass the cache read). */
+function munsForceEnv(): boolean {
+  const v = process.env.MUNS_FORCE;
+  return v === "1" || v === "true";
+}
+
 export async function munsBackfill(
   runId: string,
-  opts: { lanes?: number; log?: (msg: string) => void } = {},
+  opts: { lanes?: number; force?: boolean; log?: (msg: string) => void } = {},
 ): Promise<BackfillOutcome> {
   const log = opts.log ?? (() => {});
   const empty: BackfillOutcome = { targets: 0, fetched: 0, filled: 0, byFlag: {} };
@@ -92,10 +105,23 @@ export async function munsBackfill(
     return { ...empty, reason: "no blank parameters" };
   }
 
+  // Reuse this company's prior research where it is still fresh, so REPEAT runs are
+  // stable (live web research is the main run-to-run variance source). Only the
+  // genuinely-new items are researched live. `force` (opt or MUNS_FORCE) re-fetches
+  // everything; a disabled/empty cache simply yields no reuse → today's behaviour.
+  const force = opts.force ?? munsForceEnv();
+  const cached: Map<string, CachedAnswer> = force
+    ? new Map()
+    : await getCachedAnswers(run.companyId, targets.map((t) => t.id));
+  const { live: liveIds } = planMunsResearch(targets.map((t) => t.id), new Set(cached.keys()));
+  const liveSet = new Set(liveIds);
+  const liveTargets = targets.filter((t) => liveSet.has(t.id));
+
   // Build lane sections (grouped by section; sequential 1..N numbering in order).
+  // Only the LIVE targets go through MUNS — cached items are merged in afterwards.
   const sectionMeta = new Map(sections.map((s, i) => [s.code, { number: i + 1, title: s.name }]));
   const bySection = new Map<string, LaneSection>();
-  for (const it of targets) {
+  for (const it of liveTargets) {
     const meta = sectionMeta.get(it.sectionCode) ?? { number: bySection.size + 1, title: it.sectionCode };
     let sec = bySection.get(it.sectionCode);
     if (!sec) {
@@ -111,16 +137,25 @@ export async function munsBackfill(
     companyName: run.company.name,
     ...defaultDateWindow(),
   };
-  log(`MUNS backfill: ${targets.length} blank parameters across ${laneSections.length} sections`);
+  log(
+    `MUNS backfill: ${targets.length} blank parameters ` +
+      `(${cached.size} reused from cache, ${liveTargets.length} researched live) ` +
+      `across ${laneSections.length} sections`,
+  );
 
   let done = 0;
   const answers = await runAllLanes(laneSections, munsEnv(), ctx, {
     lanes: opts.lanes,
     onProgress: (id, ok) => {
       done++;
-      log(`  [${done}/${targets.length}] ${id} ${ok ? "✓" : "✗"}`);
+      log(`  [${done}/${liveTargets.length}] ${id} ${ok ? "✓" : "✗"}`);
     },
   });
+  // Merge reused cache answers in so classification treats them identically to
+  // freshly-fetched ones (same analyzeItem → assignFlag path, same flag).
+  for (const [itemId, c] of cached) {
+    answers.set(itemId, { id: itemId, answer: c.answer, ok: true, sources: c.sources });
+  }
 
   const scale = await loadCompanyScale(runId);
   const outcome: BackfillOutcome = { targets: targets.length, fetched: 0, filled: 0, byFlag: {} };
@@ -169,6 +204,25 @@ export async function munsBackfill(
       log(`  ${it.id} classify error: ${(e as Error).message}`);
     }
   }
+
+  // Persist freshly-fetched answers so the NEXT run for this company reuses them
+  // (stable repeat runs). Best-effort: never blocks or fails the backfill.
+  const toCache: MunsCacheEntry[] = [];
+  for (const it of liveTargets) {
+    const a = answers.get(it.id);
+    if (!a || !a.ok || !a.answer || a.answer.startsWith("[Error]")) continue;
+    const w = dateWindowForItem(it.id, it.sectionCode);
+    toCache.push({
+      itemId: it.id,
+      question: questionText(it.id, it.item),
+      answer: a.answer,
+      sources: a.sources ?? [],
+      fromDate: w.fromDate,
+      toDate: w.toDate,
+    });
+  }
+  const stored = await putCachedAnswers(run.companyId, toCache);
+  if (stored) log(`MUNS cache: stored ${stored} answer(s) for reuse on the next run`);
 
   // Refresh the run's stored summary so the tally + gate reflect the backfilled
   // items (analyze-run wrote summaryJson BEFORE this pass, so it's now stale).

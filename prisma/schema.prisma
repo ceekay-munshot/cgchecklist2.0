@@ -97,9 +97,33 @@ model Company {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   analysisRuns AnalysisRun[]
+  munsAnswers  MunsAnswer[]
 
   @@index([name])
   @@index([ticker])
+}
+
+// Company-level cache of MUNS web-research answers, keyed by (company, item).
+// Live web research is the dominant source of run-to-run variance: two runs of
+// the same company can retrieve different pages and land on different flags. The
+// backfill reuses a fresh (< TTL) cached answer instead of re-querying, so repeat
+// runs are STABLE; `force` / an expired entry re-researches. Answers are keyed to
+// the company (not a run) so they survive across runs.
+model MunsAnswer {
+  id        String   @id @default(cuid())
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+  itemId    String // checklist item id, e.g. "A1-05"
+  question  String // the exact MUNS question asked (item text + any directive)
+  answer    String // the cleaned MUNS answer reused as evidence
+  sources   String? // JSON-encoded string[] of citation URLs
+  fromDate  String // search window used (YYYY-MM-DD) — for provenance
+  toDate    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, itemId])
+  @@index([companyId])
 }
 
 /// A long-lived, resumable, quota-aware analysis batch over a company.

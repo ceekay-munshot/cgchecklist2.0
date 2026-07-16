@@ -151,3 +151,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS "ItemResult_runId_itemId_key" ON "ItemResult"(
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "ProviderUsage_provider_date_key" ON "ProviderUsage"("provider", "date");
 
+
+-- CreateTable: company-level MUNS research cache (reused across runs to keep
+-- repeat runs stable; see prisma/schema.prisma MunsAnswer). Idempotent.
+CREATE TABLE IF NOT EXISTS "MunsAnswer" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "companyId" TEXT NOT NULL,
+    "itemId" TEXT NOT NULL,
+    "question" TEXT NOT NULL,
+    "answer" TEXT NOT NULL,
+    "sources" TEXT,
+    "fromDate" TEXT NOT NULL,
+    "toDate" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "MunsAnswer_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "MunsAnswer_companyId_idx" ON "MunsAnswer"("companyId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "MunsAnswer_companyId_itemId_key" ON "MunsAnswer"("companyId", "itemId");
