@@ -21,6 +21,16 @@ on:
         required: false
         default: false
         type: boolean
+      section:
+        description: "Targeted re-run — section code only (e.g. A3). Blank = full run. Skips MUNS/QA backfill."
+        required: false
+        default: ""
+        type: string
+      item:
+        description: "Targeted re-run — single item id only (e.g. A3-02). Blank = full run. Skips MUNS/QA backfill."
+        required: false
+        default: ""
+        type: string
 
 jobs:
   analyze-run:
@@ -82,10 +92,15 @@ jobs:
           npm run db:seed
 
       # Inputs are passed via env (not interpolated) to avoid shell injection.
-      - name: Analyze ${{ inputs.ticker }} (all 106 items)
+      # SCOPE_SECTION / SCOPE_ITEM (blank on a full run) narrow the pass to a
+      # single section / item — analyze-run.ts reads them and re-evaluates only
+      # those, leaving every other item's result untouched.
+      - name: Analyze ${{ inputs.ticker }} (all 106 items, or scoped)
         env:
           TICKER: ${{ inputs.ticker }}
           FORCE: ${{ inputs.force }}
+          SCOPE_SECTION: ${{ inputs.section }}
+          SCOPE_ITEM: ${{ inputs.item }}
         run: |
           if [ "$FORCE" = "true" ]; then
             npm run analyze-run -- "$TICKER" --force
@@ -95,15 +110,19 @@ jobs:
 
       # Fill the remaining NOT_AVAILABLE parameters via MUNS, then re-classify
       # with the existing green/red-flag logic. Skips cleanly if MUNS_TOKEN unset.
+      # SKIPPED on a scoped re-run (section/item set): those backfill the WHOLE
+      # report, which would defeat a surgical single-parameter/section re-run.
       - name: MUNS backfill ${{ inputs.ticker }} (remaining params)
-        if: env.MUNS_TOKEN != ''
+        if: env.MUNS_TOKEN != '' && inputs.section == '' && inputs.item == ''
         env:
           TICKER: ${{ inputs.ticker }}
         run: npm run muns-backfill -- "$TICKER"
 
       # Final self-audit: clear report bugs, then finalize the run to DONE.
+      # Also skipped on a scoped re-run — analyze-run.ts finalizes the run itself
+      # (it does not defer to QA when scoped), so a targeted re-run still ends DONE.
       - name: Self-audit (QA) ${{ inputs.ticker }}
-        if: always()
+        if: always() && inputs.section == '' && inputs.item == ''
         env:
           TICKER: ${{ inputs.ticker }}
         run: npm run qa-review -- "$TICKER"

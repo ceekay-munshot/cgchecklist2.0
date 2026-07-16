@@ -172,17 +172,40 @@ export function summarize(
 // ---------------------------------------------------------------------------
 
 /**
- * Evaluate ALL checklist items for a run, persisting each ItemResult as it
- * finishes. RESUMABLE: only non-terminal items (PENDING / ERROR / DEFERRED) are
- * processed — DONE / NEEDS_REVIEW are skipped, so a re-run continues where it
- * stopped. QUOTA-AWARE: when the LLM providers are exhausted, the item is
- * DEFERRED (Tier-1 zero-LLM numeric items still complete); the run is left
- * PARTIAL so the next run/day resumes. On full completion the run is DONE and
- * heavy document text is pruned.
+ * Which checklist items a run should (re-)evaluate. Omitting a scope entirely
+ * means "the whole run" (the default full-run behaviour). Supplying either field
+ * narrows the pass to just those items / sections — this is what powers the
+ * per-parameter and per-section re-run buttons in the report: an analyst can
+ * redo one item (or one section) without disturbing the other ~102 results.
+ */
+export interface RunScope {
+  /** Evaluate only these specific checklist item ids, e.g. ["A3-02"]. */
+  itemIds?: string[];
+  /** Evaluate only items belonging to these section codes, e.g. ["A3"]. */
+  sectionCodes?: string[];
+}
+
+/**
+ * Evaluate checklist items for a run, persisting each ItemResult as it finishes.
+ *
+ * SCOPE: with no `scope`, this is the full run over ALL items. Passing a `scope`
+ * (item ids and/or section codes) narrows the pass to just those items and
+ * ALWAYS re-evaluates them (a scoped pass is an explicit "redo this", so prior
+ * DONE status is ignored for the targeted items) — the untouched items keep
+ * their existing results untouched.
+ *
+ * RESUMABLE (full run only): with no scope, only non-terminal items (PENDING /
+ * ERROR / DEFERRED) are processed — DONE / NEEDS_REVIEW are skipped, so a re-run
+ * continues where it stopped. QUOTA-AWARE: when the LLM providers are exhausted,
+ * the item is DEFERRED (Tier-1 zero-LLM numeric items still complete); the run is
+ * left PARTIAL so the next run/day resumes. On full completion the run is DONE
+ * and (opt-in) heavy document text is pruned. The summary + non-negotiable gate
+ * are always recomputed over ALL items from the current DB state, so a scoped
+ * re-run still leaves the run's headline totals correct.
  */
 export async function runAnalysis(
   runId: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; scope?: RunScope } = {},
 ): Promise<RunOutcome> {
   const run = await prisma.analysisRun.findUnique({ where: { id: runId } });
   if (!run) throw new Error(`run ${runId} not found`);
@@ -203,10 +226,23 @@ export async function runAnalysis(
     prisma.itemResult.findMany({ where: { runId }, select: { itemId: true, status: true } }),
   ]);
 
-  // RESUMABLE by default (skip terminal items); --force re-evaluates ALL 106,
-  // ignoring prior status (so items judged under an older engine refresh).
-  const terminalIds = new Set(existing.filter((r) => TERMINAL.has(r.status)).map((r) => r.itemId));
-  const todo = opts.force ? items : items.filter((i) => !terminalIds.has(i.id));
+  // Normalise the optional scope (drop blanks) — a scoped pass targets just the
+  // named items / sections and ALWAYS re-evaluates them regardless of prior
+  // status (the whole point of a "re-run this parameter/section" button).
+  const scopeItemIds = new Set((opts.scope?.itemIds ?? []).map((s) => s.trim()).filter(Boolean));
+  const scopeSections = new Set((opts.scope?.sectionCodes ?? []).map((s) => s.trim()).filter(Boolean));
+  const scoped = scopeItemIds.size > 0 || scopeSections.size > 0;
+
+  let todo: typeof items;
+  if (scoped) {
+    // Targeted re-run: only the in-scope items, always re-evaluated.
+    todo = items.filter((i) => scopeItemIds.has(i.id) || scopeSections.has(i.sectionCode));
+  } else {
+    // RESUMABLE by default (skip terminal items); --force re-evaluates ALL 106,
+    // ignoring prior status (so items judged under an older engine refresh).
+    const terminalIds = new Set(existing.filter((r) => TERMINAL.has(r.status)).map((r) => r.itemId));
+    todo = opts.force ? items : items.filter((i) => !terminalIds.has(i.id));
+  }
 
   await prisma.analysisRun.update({
     where: { id: runId },
@@ -266,6 +302,33 @@ export async function runAnalysis(
   }
 
   return { runId, status, summary, deferred, pruned };
+}
+
+/**
+ * Re-evaluate a SINGLE section's items for a run (e.g. redo all of "A3 —
+ * Shareholding"). Thin wrapper over runAnalysis with a section scope; every
+ * other item keeps its existing result. The run's summary + gate are recomputed
+ * over all items afterwards.
+ */
+export function runSection(
+  runId: string,
+  sectionCode: string,
+  opts: { force?: boolean } = {},
+): Promise<RunOutcome> {
+  return runAnalysis(runId, { ...opts, scope: { sectionCodes: [sectionCode] } });
+}
+
+/**
+ * Re-evaluate a SINGLE checklist item for a run (e.g. redo just "A3-02 —
+ * promoter pledging"). Thin wrapper over runAnalysis with a one-item scope; the
+ * other ~102 items are left exactly as they were.
+ */
+export function runItem(
+  runId: string,
+  itemId: string,
+  opts: { force?: boolean } = {},
+): Promise<RunOutcome> {
+  return runAnalysis(runId, { ...opts, scope: { itemIds: [itemId] } });
 }
 
 async function markStatus(

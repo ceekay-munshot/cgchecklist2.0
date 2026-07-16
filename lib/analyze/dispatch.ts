@@ -100,8 +100,21 @@ export async function triggerAnalysisWorkflow(
  * runId and processes the run's stored SourceDocs, then the MUNS fill. Pass
  * `force` to re-evaluate ALL items (a re-analyse of a DONE run, e.g. after an
  * engine fix), not just resume the unfinished ones.
+ *
+ * Pass `sectionCode` or `itemId` for a TARGETED re-run — the workflow then
+ * re-evaluates only that section / item and skips the whole-report MUNS + QA
+ * backfill, so one parameter (or one section) can be redone without disturbing
+ * the rest of the report.
  */
-export async function triggerRunAnalysis(runId: string, opts: { force?: boolean } = {}): Promise<DispatchResult> {
+export async function triggerRunAnalysis(
+  runId: string,
+  opts: { force?: boolean; sectionCode?: string; itemId?: string } = {},
+): Promise<DispatchResult> {
   const workflow = process.env.GITHUB_ANALYZE_RUN_WORKFLOW || "analyze-run.yml";
-  return dispatchWorkflow(workflow, { ticker: runId, force: opts.force ? "true" : "false" });
+  return dispatchWorkflow(workflow, {
+    ticker: runId,
+    force: opts.force ? "true" : "false",
+    ...(opts.sectionCode ? { section: opts.sectionCode } : {}),
+    ...(opts.itemId ? { item: opts.itemId } : {}),
+  });
 }

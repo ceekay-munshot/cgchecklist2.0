@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useDeferredValue, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useMemo, useState } from "react";
 import type { CompanyReport, FlagName, ReportDoc, ReportItem, ReportSection } from "@/lib/report";
 import { useAnalyzeRun } from "@/app/components/AnalyzeRun";
 
@@ -22,7 +22,20 @@ export function ReportView({ report }: { report: CompanyReport }) {
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const [query, setQuery] = useState("");
   const slug = encodeURIComponent(report.ticker ?? report.runId);
-  const { launch, reanalyseRun, busy, overlay } = useAnalyzeRun();
+  const { launch, reanalyseRun, reanalyseScope, busy, overlay } = useAnalyzeRun();
+
+  // Targeted re-runs: redo one section / one parameter in place, leaving every
+  // other result untouched. Stable callbacks so the memoised rows don't re-render.
+  const runId = report.runId;
+  const company = report.company;
+  const onRerunSection = useCallback(
+    (code: string, name: string) => reanalyseScope(runId, { sectionCode: code }, { label: `${company} · ${name}` }),
+    [reanalyseScope, runId, company],
+  );
+  const onRerunItem = useCallback(
+    (id: string) => reanalyseScope(runId, { itemId: id }, { label: `${company} · ${id}` }),
+    [reanalyseScope, runId, company],
+  );
 
   const totals = report.summary?.totals ?? { green: 0, red: 0, neutral: 0, na: 0 };
   const gatePass = report.summary?.nonNegotiable?.gatePass ?? null;
@@ -186,7 +199,15 @@ export function ReportView({ report }: { report: CompanyReport }) {
             <p className="mt-2 text-sm">No items match this filter.</p>
           </div>
         ) : (
-          sections.map((s) => <SectionCard key={s.code} section={s} />)
+          sections.map((s) => (
+            <SectionCard
+              key={s.code}
+              section={s}
+              busy={busy}
+              onRerunSection={onRerunSection}
+              onRerunItem={onRerunItem}
+            />
+          ))
         )}
       </div>
 
@@ -198,7 +219,17 @@ export function ReportView({ report }: { report: CompanyReport }) {
   );
 }
 
-function SectionCard({ section }: { section: ReportSection }) {
+function SectionCard({
+  section,
+  busy,
+  onRerunSection,
+  onRerunItem,
+}: {
+  section: ReportSection;
+  busy: boolean;
+  onRerunSection: (code: string, name: string) => void;
+  onRerunItem: (id: string) => void;
+}) {
   const c = section.counts;
   return (
     <section className="rise overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -209,16 +240,27 @@ function SectionCard({ section }: { section: ReportSection }) {
           </span>
           <h2 className="font-semibold tracking-tight text-slate-800">{section.name}</h2>
         </div>
-        <div className="flex items-center gap-2 text-xs font-semibold">
-          {c.green > 0 && <Mini emoji="🟢" n={c.green} cls="text-emerald-600" />}
-          {c.red > 0 && <Mini emoji="🔴" n={c.red} cls="text-rose-600" />}
-          {c.neutral > 0 && <Mini emoji="⚪" n={c.neutral} cls="text-amber-600" />}
-          {c.na > 0 && <Mini emoji="▫️" n={c.na} cls="text-slate-400" />}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            {c.green > 0 && <Mini emoji="🟢" n={c.green} cls="text-emerald-600" />}
+            {c.red > 0 && <Mini emoji="🔴" n={c.red} cls="text-rose-600" />}
+            {c.neutral > 0 && <Mini emoji="⚪" n={c.neutral} cls="text-amber-600" />}
+            {c.na > 0 && <Mini emoji="▫️" n={c.na} cls="text-slate-400" />}
+          </div>
+          <button
+            type="button"
+            onClick={() => onRerunSection(section.code, section.name)}
+            disabled={busy}
+            title={`Re-run every parameter in “${section.name}” — leaves the rest of the report untouched`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span>🔄</span> Re-run section
+          </button>
         </div>
       </div>
       <ul className="divide-y divide-slate-100">
         {section.items.map((it) => (
-          <ItemRow key={it.id} it={it} />
+          <ItemRow key={it.id} it={it} busy={busy} onRerun={onRerunItem} />
         ))}
       </ul>
       <SectionSources items={section.items} />
@@ -290,7 +332,15 @@ function DocumentsPanel({ docs }: { docs: ReportDoc[] }) {
 
 // Memoised: rows keep the same ReportItem reference across filter/search
 // changes, so unchanged rows skip re-rendering entirely.
-const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
+const ItemRow = memo(function ItemRow({
+  it,
+  busy,
+  onRerun,
+}: {
+  it: ReportItem;
+  busy: boolean;
+  onRerun: (id: string) => void;
+}) {
   const f = effective(it);
   const meta = FLAG[f];
   const stale = !it.flag && !!it.staleFlag;
@@ -376,6 +426,16 @@ const ItemRow = memo(function ItemRow({ it }: { it: ReportItem }) {
             source ↗{it.source.page != null ? ` p.${it.source.page}` : ""}
           </a>
         )}
+        <button
+          type="button"
+          onClick={() => onRerun(it.id)}
+          disabled={busy}
+          aria-label={`Re-run ${it.id}`}
+          title="Re-run just this parameter — leaves every other result untouched"
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          🔄 Re-run
+        </button>
       </div>
     </li>
   );

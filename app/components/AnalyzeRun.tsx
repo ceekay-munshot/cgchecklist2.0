@@ -188,6 +188,34 @@ export function useAnalyzeRun() {
     [busy, launchByRun],
   );
 
+  // Targeted re-run of ONE section or ONE item of an existing run — used by the
+  // report page's per-section and per-parameter "re-run" buttons. POSTs
+  // /api/analyze/scope, then polls the run by id like reanalyseRun. Every other
+  // item on the report is left untouched.
+  const reanalyseScope = useCallback(
+    async (runId: string, scope: { sectionCode?: string; itemId?: string }, opts: { label?: string } = {}) => {
+      const id = runId.trim();
+      if (!id || busy) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/analyze/scope", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: id, ...scope }),
+        });
+        const data: { dispatched?: boolean; dispatchError?: string; error?: string } = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Could not start re-run.");
+        launchByRun(id, { label: opts.label, dispatched: data.dispatched !== false, dispatchError: data.dispatchError });
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, launchByRun],
+  );
+
   const closeModal = useCallback(() => {
     stopPolling();
     setModal(null);
@@ -204,7 +232,7 @@ export function useAnalyzeRun() {
     />
   ) : null;
 
-  return { launch, launchByRun, reanalyseRun, busy, error, overlay };
+  return { launch, launchByRun, reanalyseRun, reanalyseScope, busy, error, overlay };
 }
 
 // ---------------------------------------------------------------------------

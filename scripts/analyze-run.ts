@@ -15,9 +15,41 @@ import path from "node:path";
 import { prisma } from "@/lib/db";
 import { llmProviders, openai } from "@/lib/llm";
 import { researchers, webResearcher } from "@/lib/scrape";
-import { runAnalysis, drainQueue, isCommitted, type RunOutcome } from "@/lib/orchestrate";
+import { runAnalysis, drainQueue, isCommitted, type RunOutcome, type RunScope } from "@/lib/orchestrate";
 
 const OUT_DIR = path.join(process.cwd(), "analyze-run-report");
+
+/**
+ * Read a `--flag=value` (or `--flag value`) CLI option. Returns "" if absent.
+ */
+function argValue(args: string[], name: string): string {
+  const eq = args.find((a) => a.startsWith(`--${name}=`));
+  if (eq) return eq.slice(name.length + 3).trim();
+  const idx = args.findIndex((a) => a === `--${name}`);
+  if (idx >= 0 && args[idx + 1] && !args[idx + 1].startsWith("--")) return args[idx + 1].trim();
+  return "";
+}
+
+/** Split a comma/space-separated list into trimmed, non-empty tokens. */
+function splitList(v: string): string[] {
+  return v
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * A targeted re-run scope from CLI flags OR env (the workflow passes SCOPE_*):
+ *   --section=A3            re-run every item in section A3
+ *   --item=A3-02            re-run just item A3-02
+ * Comma-separated lists are allowed. Returns undefined for a normal full run.
+ */
+function resolveScope(args: string[]): RunScope | undefined {
+  const sections = splitList(argValue(args, "section") || process.env.SCOPE_SECTION || "");
+  const items = splitList(argValue(args, "item") || process.env.SCOPE_ITEM || "");
+  if (!sections.length && !items.length) return undefined;
+  return { sectionCodes: sections, itemIds: items };
+}
 
 /**
  * Print each configured LLM provider's health before analysing, so a
@@ -208,12 +240,18 @@ async function main() {
   const args = process.argv.slice(2).map((a) => a.trim());
   // --force / --reset re-evaluates ALL 106 items, ignoring prior DONE status.
   const force = args.includes("--force") || args.includes("--reset");
+  // --section=A3 / --item=A3-02 (or SCOPE_SECTION / SCOPE_ITEM env) → a targeted
+  // re-run of just those items; undefined means a normal full run.
+  const scope = resolveScope(args);
   const arg = args.find((a) => a && !a.startsWith("--"));
 
   await preflightProviders();
   await preflightWeb();
 
   if (!arg) {
+    if (scope) {
+      console.log("Note: --section/--item scope needs a specific TICKER or runId; ignoring it for the queue drain.");
+    }
     console.log(`Draining queue (HARVESTED / PARTIAL runs)${force ? " [force]" : ""}…`);
     const outcomes = await drainQueue({ force });
     if (!outcomes.length) console.log("No eligible runs.");
@@ -232,8 +270,11 @@ async function main() {
     return;
   }
 
-  console.log(`Analyzing run ${runId}${force ? " [force re-eval]" : ""} …`);
-  const outcome = await runAnalysis(runId, { force });
+  const scopeNote = scope
+    ? ` [scope: ${[...(scope.sectionCodes ?? []), ...(scope.itemIds ?? [])].join(", ")}]`
+    : "";
+  console.log(`Analyzing run ${runId}${force ? " [force re-eval]" : ""}${scopeNote} …`);
+  const outcome = await runAnalysis(runId, { force, scope });
   console.log(
     `status=${outcome.status}  done=${outcome.summary.itemsDone}/${outcome.summary.itemsTotal}  ` +
       `reds=${outcome.summary.totalReds}  deferred=${outcome.deferred}  pruned=${outcome.pruned}  ` +
@@ -247,7 +288,12 @@ async function main() {
   // artifact, which takes several seconds. If the run sat in DONE during that
   // window, the loading screen could open a HALF-FILLED report (blanks not yet
   // MUNS-backfilled). Flipping to PROCESSING first closes that window.
-  if ((process.env.MUNS_TOKEN || process.env.QA_REVIEW) && outcome.status === "DONE") {
+  //
+  // A SCOPED re-run (one parameter / one section) deliberately skips the MUNS +
+  // QA backfill steps (they process the WHOLE report), so it must NOT defer —
+  // otherwise the run would sit in PROCESSING forever with no backfill to finish
+  // it. Let it finalize to whatever runAnalysis returned (DONE / PARTIAL).
+  if (!scope && (process.env.MUNS_TOKEN || process.env.QA_REVIEW) && outcome.status === "DONE") {
     await prisma.analysisRun.update({ where: { id: runId }, data: { status: "PROCESSING" } }).catch(() => {});
     console.log("Deferring DONE until MUNS backfill / QA self-audit completes.");
   }

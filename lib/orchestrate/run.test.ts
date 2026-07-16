@@ -91,6 +91,67 @@ describe("runAnalysis — resumable", () => {
   });
 });
 
+describe("runAnalysis — targeted scope (per-item / per-section re-run)", () => {
+  // Two sections so a section scope is distinguishable from an item scope.
+  function mkMixed() {
+    return [
+      { ...mkItems(1)[0], id: "A1-01", sectionCode: "A1", orderIndex: 0 },
+      { ...mkItems(1)[0], id: "A1-02", sectionCode: "A1", orderIndex: 1 },
+      { ...mkItems(1)[0], id: "A2-01", sectionCode: "A2", orderIndex: 0 },
+    ];
+  }
+  const allDone = [
+    { itemId: "A1-01", status: "DONE", flag: "GREEN" },
+    { itemId: "A1-02", status: "DONE", flag: "GREEN" },
+    { itemId: "A2-01", status: "DONE", flag: "GREEN" },
+  ];
+
+  it("scope.itemIds re-evaluates ONLY that item — even though it is already DONE", async () => {
+    asMock(prisma.checklistItem.findMany).mockResolvedValue(mkMixed());
+    asMock(prisma.itemResult.findMany)
+      .mockResolvedValueOnce(allDone.map((r) => ({ itemId: r.itemId, status: r.status })))
+      .mockResolvedValueOnce(allDone);
+    asMock(evaluateItem).mockResolvedValue({});
+
+    await runAnalysis("run1", { scope: { itemIds: ["A1-02"] } });
+
+    // A scoped pass ignores prior DONE for the targeted item, and touches no other.
+    expect(asMock(evaluateItem)).toHaveBeenCalledTimes(1);
+    expect(asMock(evaluateItem).mock.calls[0][0].id).toBe("A1-02");
+  });
+
+  it("scope.sectionCodes re-evaluates every item in that section only", async () => {
+    asMock(prisma.checklistItem.findMany).mockResolvedValue(mkMixed());
+    asMock(prisma.itemResult.findMany)
+      .mockResolvedValueOnce(allDone.map((r) => ({ itemId: r.itemId, status: r.status })))
+      .mockResolvedValueOnce(allDone);
+    asMock(evaluateItem).mockResolvedValue({});
+
+    await runAnalysis("run1", { scope: { sectionCodes: ["A1"] } });
+
+    // Both A1 items, not the A2 one.
+    expect(asMock(evaluateItem)).toHaveBeenCalledTimes(2);
+    const ids = asMock(evaluateItem).mock.calls.map((c) => c[0].id).sort();
+    expect(ids).toEqual(["A1-01", "A1-02"]);
+  });
+
+  it("a blank scope degrades to a normal run (empty tokens dropped, not a crash)", async () => {
+    asMock(prisma.checklistItem.findMany).mockResolvedValue(mkMixed());
+    asMock(prisma.itemResult.findMany)
+      .mockResolvedValueOnce(allDone.map((r) => ({ itemId: r.itemId, status: r.status })))
+      .mockResolvedValueOnce(allDone);
+    asMock(evaluateItem).mockResolvedValue({});
+
+    // All whitespace/empty → no real target → falls back to the default resumable
+    // run (which, with every item already DONE, evaluates nothing). The point is
+    // it must not throw or wrongly force a full re-eval.
+    const out = await runAnalysis("run1", { scope: { itemIds: ["  "], sectionCodes: [""] } });
+
+    expect(asMock(evaluateItem)).not.toHaveBeenCalled();
+    expect(out.status).toBe("DONE");
+  });
+});
+
 describe("runAnalysis — completion + prune", () => {
   const prevPrune = process.env.PRUNE_TEXT;
   afterEach(() => {
